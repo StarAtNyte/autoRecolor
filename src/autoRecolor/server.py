@@ -159,7 +159,7 @@ async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
                 finalize_result = result.get("reasoning", "Done.")
                 yield f"event: finalize\ndata: {json.dumps({'reasoning': finalize_result})}\n\n"
 
-            if func_name in ("update_color", "adjust_hsl", "relabel_color"):
+            if func_name in _PALETTE_MUTATING:
                 _sync_prompt(messages, palette)
                 preview = _make_preview(img, original, palette, label_map)
                 palette_strip = _make_palette_strip(palette, img.size[0])
@@ -242,6 +242,14 @@ async def _call_llm(messages: list[dict]):
     yield "done", content, tool_calls
 
 
+_PALETTE_MUTATING = {
+    "update_color", "adjust_color", "adjust_palette",
+    "set_lightness", "set_chroma", "match_lightness",
+    # legacy
+    "adjust_hsl",
+}
+
+
 def _execute_tool(palette: Palette, name: str, args: dict) -> dict:
     try:
         match name:
@@ -249,15 +257,35 @@ def _execute_tool(palette: Palette, name: str, args: dict) -> dict:
                 return palette.to_dict()
             case "update_color":
                 palette.update_hex(args["color_id"], args["hex"])
+                return {"success": True, "entry": palette.get_entry(args["color_id"]).to_info_dict()}
+            case "adjust_color":
+                palette.adjust_oklab_axes(args["color_id"], args["axes"])
+                return {"success": True, "entry": palette.get_entry(args["color_id"]).to_info_dict()}
+            case "adjust_palette":
+                palette.adjust_palette_axes(args["axes"], exclude_ids=args.get("exclude_ids", []))
                 return {"success": True, "palette": palette.to_dict()}
+            case "set_lightness":
+                palette.set_lightness(args["color_id"], float(args["L"]))
+                return {"success": True, "entry": palette.get_entry(args["color_id"]).to_info_dict()}
+            case "set_chroma":
+                palette.set_chroma(args["color_id"], float(args["C"]))
+                return {"success": True, "entry": palette.get_entry(args["color_id"]).to_info_dict()}
+            case "match_lightness":
+                palette.match_lightness(args["source_id"], args["target_id"])
+                return {"success": True, "entry": palette.get_entry(args["target_id"]).to_info_dict()}
+            case "rate_palette":
+                score = palette.harmony_score()
+                return {"harmony_score": score,
+                        "interpretation": "good" if score > 0.2 else "neutral" if score > -0.2 else "low"}
+            case "relabel_color":
+                palette.relabel(args["color_id"], args["label"])
+                return {"success": True}
+            case "finalize":
+                return {"success": True, "reasoning": args.get("reasoning", "")}
+            # legacy
             case "adjust_hsl":
                 palette.adjust_hsl(args["color_id"], args["h_shift"], args["s_shift"], args["l_shift"])
                 return {"success": True, "palette": palette.to_dict()}
-            case "relabel_color":
-                palette.relabel(args["color_id"], args["label"])
-                return {"success": True, "palette": palette.to_dict()}
-            case "finalize":
-                return {"success": True, "reasoning": args.get("reasoning", "")}
             case _:
                 return {"error": f"Unknown tool: {name}"}
     except Exception as e:
