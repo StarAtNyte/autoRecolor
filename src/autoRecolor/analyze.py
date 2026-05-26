@@ -1,9 +1,11 @@
 from __future__ import annotations
 import numpy as np
 from PIL import Image
-from sklearn.cluster import KMeans
 from autoRecolor.palette import Palette, ColorEntry
-from autoRecolor.utils import rgb_to_hsl, rgb_to_hex, rgb_to_hsl_batch
+from autoRecolor.utils import (
+    rgb_to_hsl, rgb_to_hex, rgb_to_hsl_batch,
+    rgb_to_oklab_batch, hyab_dist_matrix,
+)
 
 
 # Images with this many unique colors or fewer skip K-means entirely —
@@ -28,7 +30,6 @@ def analyze_image(
     w, h = img.size
     pixels_full = np.array(img).reshape(-1, 3)  # (N, 3) uint8
 
-    # Check how many unique colours the image actually contains
     unique_rgb, inverse = np.unique(pixels_full, axis=0, return_inverse=True)
     n_unique = len(unique_rgb)
 
@@ -36,7 +37,7 @@ def analyze_image(
         print(f"  ↳ {n_unique} unique colours — using exact extraction (no clustering)")
         return _analyze_exact(img, pixels_full, unique_rgb, inverse, image_path)
     else:
-        print(f"  ↳ {n_unique} unique colours — clustering to {n_colors}")
+        print(f"  ↳ {n_unique} unique colours — clustering to {n_colors} (OKLAB + HyAB)")
         return _analyze_clustered(img, pixels_full, n_colors, resize_max, image_path)
 
 
@@ -72,6 +73,7 @@ def _analyze_exact(
             rgb=rgb,
             hsl=hsl,
             pixel_percent=pct,
+            # oklab is auto-computed in __post_init__
         ))
 
         mask = inverse == idx
@@ -81,7 +83,6 @@ def _analyze_exact(
 
     dedupe_labels(palette_colors)
 
-    # label_map: each pixel → index into unique_rgb (== ColorEntry.id)
     label_map = inverse.reshape(img.size[1], img.size[0])
 
     palette = Palette(
@@ -93,7 +94,57 @@ def _analyze_exact(
     return palette, img, label_map, cluster_stats_list
 
 
-# ── K-means clustering (photos / complex illustrations) ───────────────────────
+# ── HyAB K-Means in OKLAB space ───────────────────────────────────────────────
+
+def _hyab_kmeans(
+    pixels_oklab: np.ndarray,
+    k: int,
+    max_iter: int = 30,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    K-Means++ initialised K-Means using HyAB distance in OKLAB space.
+    Returns (centers, labels) where centers is (k, 3) float64 and labels is (N,) int.
+    """
+    n = len(pixels_oklab)
+    rng = np.random.default_rng(seed)
+
+    # ── K-Means++ initialisation ──────────────────────────────────────────────
+    first_idx = int(rng.integers(n))
+    centers = [pixels_oklab[first_idx].copy()]
+
+    for _ in range(k - 1):
+        cents = np.array(centers)                          # (K_so_far, 3)
+        dists = hyab_dist_matrix(pixels_oklab, cents)      # (N, K_so_far)
+        min_dists = dists.min(axis=1)                      # (N,)
+        probs = min_dists ** 2
+        total = probs.sum()
+        if total == 0:
+            centers.append(pixels_oklab[int(rng.integers(n))].copy())
+        else:
+            probs /= total
+            idx = int(rng.choice(n, p=probs))
+            centers.append(pixels_oklab[idx].copy())
+
+    centers = np.array(centers)   # (k, 3)
+    labels = np.zeros(n, dtype=np.int32)
+
+    # ── Lloyd iterations ──────────────────────────────────────────────────────
+    for _ in range(max_iter):
+        dists   = hyab_dist_matrix(pixels_oklab, centers)  # (N, k)
+        new_labels = dists.argmin(axis=1).astype(np.int32)
+        if np.array_equal(new_labels, labels):
+            break
+        labels = new_labels
+        for ki in range(k):
+            mask = labels == ki
+            if mask.sum() > 0:
+                centers[ki] = pixels_oklab[mask].mean(axis=0)
+
+    return centers, labels
+
+
+# ── K-Means clustering (photos / complex illustrations) ───────────────────────
 
 def _analyze_clustered(
     img: Image.Image,
@@ -104,42 +155,54 @@ def _analyze_clustered(
 ) -> tuple[Palette, Image.Image, np.ndarray, list[ClusterStats]]:
     w, h = img.size
 
-    # Fit K-means on a downsampled version for speed
+    # Downsample for speed when fitting
     if max(w, h) > resize_max:
         ratio = resize_max / max(w, h)
         img_small = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
-        pixels_small = np.array(img_small).reshape(-1, 3).astype(np.float32)
+        pixels_small = np.array(img_small).reshape(-1, 3).astype(np.uint8)
     else:
-        pixels_small = pixels_full.astype(np.float32)
+        pixels_small = pixels_full.copy()
 
-    kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=10)
-    kmeans.fit(pixels_small)
-    centroids = kmeans.cluster_centers_.astype(int)
+    # Convert small pixels to OKLAB, cluster with HyAB
+    small_oklab = rgb_to_oklab_batch(pixels_small)          # (N_small, 3)
+    centers_oklab, _ = _hyab_kmeans(small_oklab, n_colors)  # fit on small
 
-    # Predict on full-resolution pixels
-    labels_full = kmeans.predict(pixels_full.astype(np.float32))
+    # Assign full-res pixels using HyAB (chunked for memory safety)
+    full_oklab   = rgb_to_oklab_batch(pixels_full)                      # (N, 3)
+    dists_full   = hyab_dist_matrix(full_oklab, centers_oklab)          # (N, K)
+    labels_full  = dists_full.argmin(axis=1).astype(np.int32)           # (N,)
 
+    # Centroid RGB: round mean of pixels in each cluster (done in RGB not OKLAB
+    # so that saved hex looks natural on screen)
     unique, counts = np.unique(labels_full, return_counts=True)
     total = counts.sum()
-    order = np.argsort(-counts)
+    order = np.argsort(-counts)   # most-frequent first
 
     pixels_hsl_full = rgb_to_hsl_batch(pixels_full)
     palette_colors: list[ColorEntry] = []
     cluster_stats_list: list[ClusterStats] = []
 
     for rank, idx in enumerate(order):
-        centroid = centroids[idx].tolist()
-        hex_color = rgb_to_hex(*centroid)
-        hsl = rgb_to_hsl(*centroid)
+        # Centroid in OKLAB → convert back to RGB for the palette entry
+        import numpy as _np
+        oklab_c = centers_oklab[idx]
+        from autoRecolor.utils import oklab_to_rgb_batch
+        centroid_rgb = oklab_to_rgb_batch(oklab_c[_np.newaxis])[0].tolist()
+
+        hex_color = rgb_to_hex(*centroid_rgb)
+        hsl = rgb_to_hsl(*centroid_rgb)
         pct = round(counts[idx] / total * 100, 1)
 
         palette_colors.append(ColorEntry(
             id=int(idx),
-            label=_guess_label(centroid),
+            label=_guess_label(centroid_rgb),
             hex=hex_color,
-            rgb=centroid,
+            rgb=centroid_rgb,
             hsl=hsl,
             pixel_percent=pct,
+            oklab=[round(float(oklab_c[0]), 5),
+                   round(float(oklab_c[1]), 5),
+                   round(float(oklab_c[2]), 5)],
         ))
 
         mask = labels_full == idx
@@ -172,7 +235,6 @@ def _guess_label(rgb: list[int]) -> str:
         if l < 85:  return "light_gray"
         return "white"
 
-    # Only call it black/white if truly achromatic-looking, not just very dark/light
     if l < 15 and s < 40:  return "black"
     if l > 88 and s < 20:  return "white"
 
@@ -189,7 +251,6 @@ def _guess_label(rgb: list[int]) -> str:
     elif h < 345:            hue_name = "pink"
     else:                    hue_name = "color"
 
-    # Prefix with lightness tier so duplicate hue names stay distinct
     if l < 25:   return f"dark_{hue_name}"
     if l > 75:   return f"light_{hue_name}"
     return hue_name

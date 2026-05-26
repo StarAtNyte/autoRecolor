@@ -67,13 +67,9 @@ def rgb_to_hsl_batch(pixels: np.ndarray) -> np.ndarray:
 
     l = (mx + mn) / 2.0
 
-    # Saturation (0 where achromatic).
-    # Guard the denominator to avoid divide-by-zero for l≈0 or l≈1 pixels;
-    # those are achromatic anyway so the np.where picks 0.0 regardless.
     denom = np.maximum(1.0 - np.abs(2.0 * l - 1.0), 1e-10)
     s = np.where(d == 0, 0.0, d / denom)
 
-    # Hue
     h = np.zeros_like(r)
     nz = d > 0
     mr = nz & (mx == r)
@@ -98,12 +94,9 @@ def hsl_to_rgb_batch(hsl: np.ndarray) -> np.ndarray:
     x = c * (1.0 - np.abs(h6 % 2.0 - 1.0))
     m = l - c / 2.0
 
-    # Sector index 0-5
     hi = np.floor(h6).astype(np.int32) % 6
     z = np.zeros_like(c)
 
-    # (r, g, b) coefficients per sector
-    # 0:(c,x,0)  1:(x,c,0)  2:(0,c,x)  3:(0,x,c)  4:(x,0,c)  5:(c,0,x)
     rr = np.where((hi == 0) | (hi == 5), c, np.where((hi == 1) | (hi == 4), x, z))
     gg = np.where((hi == 1) | (hi == 2), c, np.where((hi == 0) | (hi == 3), x, z))
     bb = np.where((hi == 3) | (hi == 4), c, np.where((hi == 2) | (hi == 5), x, z))
@@ -171,3 +164,174 @@ def oklab_to_rgb_batch(lab: np.ndarray) -> np.ndarray:
     lin = lms @ _M1_INV.T
     srgb = _linear_to_srgb(lin)
     return np.clip(srgb * 255.0, 0, 255).astype(np.uint8)
+
+
+# ── Scalar OKLAB helpers (for palette-level use) ──────────────────────────────
+
+def hex_to_oklab(hex_color: str) -> tuple[float, float, float]:
+    """Hex string → (L, a, b) OKLAB floats."""
+    rgb = hex_to_rgb(hex_color)
+    arr = rgb_to_oklab_batch(np.array([rgb], dtype=np.uint8))[0]
+    return float(arr[0]), float(arr[1]), float(arr[2])
+
+
+def oklab_to_hex(L: float, a: float, b: float) -> str:
+    """(L, a, b) OKLAB → hex string (clamped to sRGB gamut)."""
+    arr = oklab_to_rgb_batch(np.array([[L, a, b]], dtype=np.float64))[0]
+    return rgb_to_hex(int(arr[0]), int(arr[1]), int(arr[2]))
+
+
+# ── HyAB distance ─────────────────────────────────────────────────────────────
+# Manhattan on L + Euclidean on ab  — better than Euclidean for OKLAB clustering
+# (notes.md: "OKLAB ko space my HyAB ko distance")
+
+def hyab_dist_matrix(points: np.ndarray, centers: np.ndarray) -> np.ndarray:
+    """
+    Vectorized HyAB distance: (N, 3) points × (K, 3) centers → (N, K) distances.
+    Memory-safe: processes in chunks to avoid allocating giant arrays.
+    """
+    N, K = len(points), len(centers)
+    out = np.empty((N, K), dtype=np.float64)
+    CHUNK = 50_000
+    for start in range(0, N, CHUNK):
+        end = min(start + CHUNK, N)
+        chunk = points[start:end]                              # (C, 3)
+        dL   = np.abs(chunk[:, 0:1] - centers[:, 0])          # (C, K)
+        diff_ab = chunk[:, np.newaxis, 1:] - centers[np.newaxis, :, 1:]  # (C, K, 2)
+        dab  = np.linalg.norm(diff_ab, axis=2)                # (C, K)
+        out[start:end] = dL + dab
+    return out
+
+
+# ── OKLAB perceptual axis shifts ──────────────────────────────────────────────
+# Ported from ColorWay/Mycolor.studio/lib/colorways.jsx — applyOklabAxisPalette
+#
+# Axes and their semantics:
+#   lightness   — additive L shift  (+0.1 = noticeably brighter)
+#   warmth      — along blackbody locus D65→A  (+0.1 = warmer amber/orange)
+#   chroma      — radial ab push, hue angle preserved exactly  (+0.1 = more vivid)
+#   hue         — ab-plane rotation in degrees  (+30 = 30° CCW shift)
+#   exposure    — multiplicative L in photographic stops  (+1 = 2× brighter)
+#   saturation  — proportional chroma scale  (+0.5 = 50% more saturated)
+#   purity      — jewel-tone: darken + boost chroma (+) / lighten + desaturate (-)
+#   mute        — pull toward gray/mid-L (+) / boost contrast+chroma (-)
+#   green_red   — direct a-channel shift  (+ = redder, − = greener)
+#   blue_yellow — direct b-channel shift  (+ = yellower, − = bluer)
+#   contrast    — expand/compress L around palette mean (palette-level only)
+
+_WARM_A = 0.216   # blackbody locus direction in ab-plane (validated)
+_WARM_B = 0.976
+
+
+def oklab_axis_shift(
+    L: float, a: float, b: float,
+    axis: str, delta: float,
+    mean_L: float = 0.5,
+) -> tuple[float, float, float]:
+    """
+    Apply a single named perceptual axis shift in OKLAB space.
+    mean_L is only used for the 'contrast' axis (pass the palette mean L).
+    Returns new (L, a, b).
+    """
+    if axis == "lightness":
+        return L + delta, a, b
+
+    elif axis == "warmth":
+        return L, a + delta * _WARM_A, b + delta * _WARM_B
+
+    elif axis == "chroma":
+        C = math.hypot(a, b)
+        safe_C = max(C, 1e-10)
+        scale = max((C + delta) / safe_C, 0.0)
+        return L, a * scale, b * scale
+
+    elif axis == "hue":
+        t = delta * math.pi / 180.0
+        cos_t, sin_t = math.cos(t), math.sin(t)
+        return L, a * cos_t - b * sin_t, a * sin_t + b * cos_t
+
+    elif axis == "exposure":
+        return L * (2.0 ** delta), a, b
+
+    elif axis == "saturation":
+        f = max(1.0 + delta, 0.0)
+        return L, a * f, b * f
+
+    elif axis == "purity":
+        # +delta → darker AND more chromatic (jewel/ink)
+        # -delta → lighter AND less chromatic (chalk/pastel)
+        return L * (1.0 - delta), a * (1.0 + delta), b * (1.0 + delta)
+
+    elif axis == "mute":
+        # +delta → less chromatic, L pulled toward 0.5 (corporate/neutral)
+        return L + 0.3 * delta * (0.5 - L), a * (1.0 - delta), b * (1.0 - delta)
+
+    elif axis == "green_red":
+        return L, a + delta, b
+
+    elif axis == "blue_yellow":
+        return L, a, b + delta
+
+    elif axis == "contrast":
+        # Expand/compress around the palette's mean L
+        return mean_L + (L - mean_L) * (1.0 + delta), a, b
+
+    else:
+        return L, a, b
+
+
+def apply_oklab_axes(
+    L: float, a: float, b: float,
+    axes: dict[str, float],
+    mean_L: float = 0.5,
+) -> tuple[float, float, float]:
+    """Apply multiple named axis shifts sequentially. Returns clamped (L, a, b)."""
+    for axis, delta in axes.items():
+        if delta == 0:
+            continue
+        L, a, b = oklab_axis_shift(L, a, b, axis, delta, mean_L=mean_L)
+    # Clamp L to [0, 1]; a/b are unclamped (oklab_to_rgb handles gamut mapping)
+    L = max(0.0, min(1.0, L))
+    return L, a, b
+
+
+# ── Palette harmony score (Ou et al. 2006) ───────────────────────────────────
+# Ported from ColorWay/Mycolor.studio/lib/colorways.jsx — harmonyPalette
+# The Ou formula was calibrated for CIELAB scale, so we scale OKLAB first:
+#   L_ou = L_oklab × 100,  a_ou = a_oklab × 150,  b_ou = b_oklab × 150
+
+def _harmony_pair(l1: float, a1: float, b1: float,
+                  l2: float, a2: float, b2: float) -> float:
+    """Ou et al. pairwise harmony score in CIELAB-scale coordinates."""
+    dL = l2 - l1
+    C1 = math.hypot(a1, b1)
+    C2 = math.hypot(a2, b2)
+    dC = C2 - C1
+    dE = math.sqrt((l1 - l2)**2 + (a1 - a2)**2 + (b1 - b2)**2)
+    dH = math.sqrt(max(0.0, dE*dE - dL*dL - dC*dC))
+    Lsum = l1 + l2
+    return (
+        -0.7 * math.tanh(-0.7  + 0.04  * dH)
+        - 0.3 * math.tanh(-1.1  + 0.05  * dC)
+        + 0.4 * math.tanh(-0.8  + 0.05  * dL)
+        + 0.3 + 0.6 * math.tanh(-4.2 + 0.028 * Lsum)
+    )
+
+
+def harmony_score(oklab_colors: list[tuple[float, float, float]]) -> float:
+    """
+    Ou et al. palette harmony score.
+    Input: list of (L, a, b) in OKLAB native scale (L≈0-1, a/b≈±0.4).
+    Returns a float; higher is more harmonious (typical range -1 to +1).
+    """
+    # Scale to CIELAB-like range as ColorWay does
+    scaled = [(L * 100, a * 150, b * 150) for L, a, b in oklab_colors]
+    n = len(scaled)
+    if n < 2:
+        return 0.0
+    total, count = 0.0, 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            total += _harmony_pair(*scaled[i], *scaled[j])
+            count += 1
+    return round(total / count, 4) if count > 0 else 0.0
