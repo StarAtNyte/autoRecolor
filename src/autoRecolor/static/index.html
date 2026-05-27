@@ -264,6 +264,17 @@ body.dragging .drop-ring { opacity: 1; }
   background: rgba(0,0,0,.6); color: #fff; font-size: 8px;
   text-align: center; padding: 2px 0; line-height: 1.2;
 }
+.hist-dl {
+  position: absolute; top: 3px; right: 3px;
+  width: 18px; height: 18px; border-radius: 4px;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  color: #fff; border: none; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .15s, background .15s;
+}
+.hist-dl svg { width: 10px; height: 10px; }
+.hist-dl:hover { background: var(--accent); }
+.hist-thumb:hover .hist-dl { opacity: 1; }
 
 /* ── color cards ── */
 .palette-cards {
@@ -759,8 +770,21 @@ function renderHistoryStrip() {
     thumb.className = 'hist-thumb' + (i === historyIdx ? ' active' : '');
     thumb.title = entry.label;
     thumb.innerHTML = `<img src="${entry.previewUrl}" alt="v${i+1}">
-      <div class="hist-label">${entry.label}</div>`;
+      <div class="hist-label">${entry.label}</div>
+      <button class="hist-dl" title="Download ${entry.label}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
+        </svg>
+      </button>`;
     thumb.addEventListener('click', () => navigateHistory(i));
+    // download button — stop propagation so it doesn't also navigate
+    thumb.querySelector('.hist-dl').addEventListener('click', e => {
+      e.stopPropagation();
+      const a = document.createElement('a');
+      a.href = entry.previewUrl;
+      a.download = `autorecolor-${entry.label}.png`;
+      a.click();
+    });
     HISTORY_SCROLL.appendChild(thumb);
   });
   // scroll active thumb into view
