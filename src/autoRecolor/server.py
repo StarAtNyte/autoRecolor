@@ -85,7 +85,7 @@ async def upload(file: UploadFile = File(...)):
 
 
 @app.get("/stream/{sid}")
-async def stream_chat(sid: str, prompt: str):
+async def stream_chat(sid: str, prompt: str, think: bool = True):
     session = sessions.get(sid)
     if not session:
         return StreamingResponse(
@@ -94,7 +94,7 @@ async def stream_chat(sid: str, prompt: str):
         )
 
     return StreamingResponse(
-        _agent_loop(session, prompt),
+        _agent_loop(session, prompt, think=think),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -122,7 +122,7 @@ def _trim_context(messages: list[dict]) -> None:
                 pass
 
 
-async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
+async def _agent_loop(session: dict, prompt: str, think: bool = True) -> AsyncGenerator[str]:
     palette: Palette = session["palette"]
     messages: list[dict] = session["messages"]
     original = session["original_palette"]
@@ -140,7 +140,7 @@ async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
 
         # Stream thinking tokens live; collect content + tool_calls for processing
         try:
-            async for event, *payload in _call_llm(messages):
+            async for event, *payload in _call_llm(messages, think=think):
                 if event == "thinking":
                     yield f"event: thinking\ndata: {json.dumps({'chunk': payload[0]})}\n\n"
                 elif event == "done":
@@ -207,7 +207,7 @@ async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
     yield "event: done\ndata: {}\n\n"
 
 
-async def _call_llm(messages: list[dict]):
+async def _call_llm(messages: list[dict], think: bool = True):
     """
     Async generator.
     Yields: ("thinking", chunk_str)  — one per streamed thinking token
@@ -218,7 +218,7 @@ async def _call_llm(messages: list[dict]):
         "messages": messages,
         "tools": TOOLS,
         "stream": True,
-        "think": True,                    # enable Qwen3 reasoning tokens
+        "think": think,
         "options": {"temperature": 0.3, "num_ctx": 32768},
     }
     content = ""

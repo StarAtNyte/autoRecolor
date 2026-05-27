@@ -532,6 +532,16 @@ details.think.streaming summary {
       <span id="modelLbl" style="font-size:11.5px;color:var(--text-dim);white-space:nowrap">Checking…</span>
     </div>
     <div class="divider"></div>
+    <!-- thinking toggle -->
+    <button class="icon-btn active" id="thinkBtn" title="Toggle extended thinking (slower but more accurate)">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 2a5 5 0 014 8l-.5.5V13a1 1 0 01-1 1H5.5a1 1 0 01-1-1v-2.5L4 10A5 5 0 018 2z"/>
+        <line x1="6" y1="13" x2="10" y2="13"/>
+        <line x1="6.5" y1="11" x2="9.5" y2="11"/>
+      </svg>
+      Think
+    </button>
+    <div class="divider"></div>
     <!-- before/after compare -->
     <button class="icon-btn" id="compareBtn" disabled title="Toggle before/after">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
@@ -639,6 +649,16 @@ const HINT          = document.getElementById('hint');
 const THEME_BTN     = document.getElementById('themeBtn');
 const COMPARE_BTN   = document.getElementById('compareBtn');
 const DOWNLOAD_BTN  = document.getElementById('downloadBtn');
+const THINK_BTN     = document.getElementById('thinkBtn');
+
+let thinkMode = true;
+THINK_BTN.addEventListener('click', () => {
+  thinkMode = !thinkMode;
+  THINK_BTN.classList.toggle('active', thinkMode);
+  THINK_BTN.title = thinkMode
+    ? 'Thinking ON — slower but more accurate'
+    : 'Thinking OFF — faster responses';
+});
 const COMPARE_LBL   = document.getElementById('compareLabel');
 const HARMONY_DOT   = document.getElementById('harmonyDot');
 const HARMONY_LBL   = document.getElementById('harmonyLbl');
@@ -790,7 +810,8 @@ const TOOL_LABELS = {
 };
 
 function stream(prompt) {
-  const src = new EventSource(`/stream/${sessionId}?prompt=${encodeURIComponent(prompt)}`);
+  const url = `/stream/${sessionId}?prompt=${encodeURIComponent(prompt)}&think=${thinkMode}`;
+  const src = new EventSource(url);
   activeSrc = src;
 
   let firstEvent = true;
