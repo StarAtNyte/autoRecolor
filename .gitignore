@@ -25,6 +25,7 @@ Thumbs.db
 # Project
 *.png
 !assets/samples/*.png
+src/autoRecolor/.uploads/
 
 # Editor / opencode
 .claude/
