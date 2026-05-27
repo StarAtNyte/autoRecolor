@@ -24,6 +24,7 @@ HERE = Path(__file__).parent
 STATIC = HERE / "static"
 TEMP = HERE / ".uploads"
 TEMP.mkdir(exist_ok=True)
+ASSETS = HERE.parent.parent / "assets"   # repo root / assets
 
 app = FastAPI(title="autoRecolor")
 
@@ -81,6 +82,40 @@ async def upload(file: UploadFile = File(...)):
         "palette": palette.to_dict(),
         "preview_url": preview_url,
         "palette_strip_url": palette_url,
+    }
+
+
+@app.post("/load-default")
+async def load_default():
+    default = ASSETS / "samples" / "test_image.png"
+    if not default.exists():
+        from fastapi import HTTPException
+        raise HTTPException(404, "Default image not found")
+
+    sid = uuid.uuid4().hex
+    palette, img, label_map, _ = analyze_image(str(default), n_colors=6)
+    original = copy.deepcopy(palette)
+
+    preview_url = _make_preview(img, original, palette, label_map)
+    palette_url = _make_palette_strip(palette, img.size[0])
+
+    sessions[sid] = {
+        "path": default,
+        "img": img,
+        "original_palette": original,
+        "palette": palette,
+        "label_map": label_map,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT.format(palette_json=palette.to_json())},
+        ],
+    }
+
+    return {
+        "session_id": sid,
+        "palette": palette.to_dict(),
+        "preview_url": preview_url,
+        "palette_strip_url": palette_url,
+        "filename": "test_image.png",
     }
 
 
@@ -219,7 +254,7 @@ async def _call_llm(messages: list[dict], think: bool = True):
         "tools": TOOLS,
         "stream": True,
         "think": think,
-        "options": {"temperature": 0.3, "num_ctx": 32768},
+        "options": {"temperature": 0.3, "num_ctx": 8192},
     }
     content = ""
     tool_calls_acc: dict[int, dict] = {}
@@ -375,11 +410,13 @@ async def index():
 
 if STATIC.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+if ASSETS.exists():
+    app.mount("/assets", StaticFiles(directory=str(ASSETS)), name="assets")
 
 
 def main() -> None:
     import uvicorn
-    uvicorn.run("autoRecolor.server:app", host="::", port=8010, reload=True)
+    uvicorn.run("autoRecolor.server:app", host="0.0.0.0", port=8010, reload=False)
 
 
 if __name__ == "__main__":

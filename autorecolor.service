@@ -1,0 +1,23 @@
+[Unit]
+Description=autoRecolor Server
+After=network-online.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=at-office
+Group=at-office
+WorkingDirectory=/home/at-office/Projects/Nitiz/autoRecolor
+ExecStart=/home/at-office/miniconda3/bin/autorecolor-server
+Restart=always
+RestartSec=5
+
+# Env
+Environment="PATH=/home/at-office/miniconda3/bin:/usr/local/bin:/usr/bin:/bin"
+
+# Logs go to journald — view with: journalctl -u autorecolor -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

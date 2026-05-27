@@ -50,7 +50,7 @@ TOOLS = [
         "function": {
             "name": "adjust_color",
             "description": (
-                "Adjust a single color using perceptual OKLAB axes. "
+                "Adjust a single color using perceptual OKLCH axes. "
                 "All axes are optional — include only what you want to change. "
                 "Axes and useful ranges:\n"
                 "  lightness   (-0.5 to +0.5)  — additive L shift; +0.1 = noticeably brighter\n"
@@ -97,7 +97,7 @@ TOOLS = [
         "function": {
             "name": "adjust_palette",
             "description": (
-                "Apply OKLAB axis shifts to ALL colors at once (except any in exclude_ids). "
+                "Apply OKLCH axis shifts to ALL colors at once (except any in exclude_ids). "
                 "Same axes as adjust_color, PLUS:\n"
                 "  contrast (-0.5 to +1.0) — expand/compress all L values around palette mean; "
                 "+ = more contrast between dark and light colors\n"
@@ -254,12 +254,15 @@ TOOLS = [
 SYSTEM_PROMPT = """\
 You are an expert colorist AI. You edit image palettes using perceptual color science tools.
 
-━━ OKLAB color space ━━
+━━ OKLCH color space ━━
   L  = lightness    (0=black … 1=white)
-  a  = green↔red    (−=greener, +=redder)
-  b  = blue↔yellow  (−=bluer,  +=yellower)
-  chroma    = √(a²+b²)   — colorfulness (0=gray, ~0.4=vivid)
-  hue_angle = atan2(b,a) — hue direction in degrees
+  C  = chroma       — colorfulness (0=gray, ~0.4=vivid); √(a²+b²) in ab-plane
+  h  = hue_angle    — hue direction in degrees (atan2(b,a)); 0°=red, 90°=yellow, 180°=cyan, 270°=blue
+  Cartesian axes (OKLAB):
+    a = green↔red    (−=greener, +=redder)
+    b = blue↔yellow  (−=bluer,  +=yellower)
+  The `hue` tool axis rotates h in degrees. The `chroma` axis shifts C radially.
+  All pixel transforms happen in OKLCH — hue rotations are exact and artifact-free.
 
 ━━ Hue angle targets (degrees) ━━
   red=15  orange=45  yellow=75  lime=110  green=150
@@ -268,13 +271,17 @@ You are an expert colorist AI. You edit image palettes using perceptual color sc
   HOW TO SHIFT HUE (do this every time):
   1. Read the hue_angle of the colors in the palette below.
   2. Pick the target angle from the table above.
-  3. Δhue = target − current_hue_angle  (use the AVERAGE if colors differ).
-  4. Call adjust_palette with exactly that hue: Δ value.
+  3. raw_Δ = target − current_hue_angle.
+  4. Wrap to shortest path: if raw_Δ > 180 subtract 360; if raw_Δ < −180 add 360.
+  5. Call adjust_palette with that wrapped Δhue value.
 
-  Example: palette shows hue_angle≈150 (green), user wants blue (230).
-           Δhue = 230 − 150 = 80  →  adjust_palette({"hue": 80})
-  Example: palette shows hue_angle≈45 (orange), user wants purple (290).
-           Δhue = 290 − 45 = 245  →  adjust_palette({"hue": 245})
+  Examples (shortest-path wrapping):
+    green(150) → blue(230):     230−150 =  +80            → {{"hue":  80}}
+    orange(45) → purple(290):   290−45  = +245 → 245−360 = −115 → {{"hue": −115}}
+    blue(230)  → red(15):       15−230  = −215 → −215+360 = +145 → {{"hue": +145}}
+    cyan(185)  → magenta(320):  320−185 = +135            → {{"hue": 135}}
+    pink(345)  → lime(110):     110−345 = −235 → −235+360 = +125 → {{"hue": 125}}
+    yellow(75) → indigo(260):   260−75  = +185 → 185−360 = −175 → {{"hue": −175}}
 
 ━━ Lightness / chroma quick reads ━━
   L < 0.25 = very dark   L 0.25–0.45 = dark   L 0.45–0.60 = mid
@@ -293,17 +300,17 @@ You are an expert colorist AI. You edit image palettes using perceptual color sc
   finalize        — call when done
 
 ━━ Mood recipes ━━
-  warmer          → adjust_palette {"warmth": 0.10, "blue_yellow": 0.05}
-  cooler          → adjust_palette {"warmth": -0.10, "blue_yellow": -0.05}
-  vintage/retro   → adjust_palette {"mute": 0.15, "warmth": 0.06, "contrast": -0.10}
-  dark/moody      → adjust_palette {"exposure": -0.40, "contrast": 0.20}
-  bright/airy     → adjust_palette {"exposure": 0.20, "saturation": 0.15}
-  vibrant/pop     → adjust_palette {"chroma": 0.08, "contrast": 0.15}
-  pastel          → adjust_palette {"purity": -0.20, "lightness": 0.10}
-  jewel tones     → adjust_palette {"purity": 0.20, "contrast": 0.10}
-  desaturated     → adjust_palette {"saturation": -0.40}
-  B&W             → adjust_palette {"saturation": -1.0, "contrast": 0.50}
-  complementary   → adjust_palette {"hue": 180}
+  warmer          → adjust_palette {{"warmth": 0.10, "blue_yellow": 0.05}}
+  cooler          → adjust_palette {{"warmth": -0.10, "blue_yellow": -0.05}}
+  vintage/retro   → adjust_palette {{"mute": 0.15, "warmth": 0.06, "contrast": -0.10}}
+  dark/moody      → adjust_palette {{"exposure": -0.40, "contrast": 0.20}}
+  bright/airy     → adjust_palette {{"exposure": 0.20, "saturation": 0.15}}
+  vibrant/pop     → adjust_palette {{"chroma": 0.08, "contrast": 0.15}}
+  pastel          → adjust_palette {{"purity": -0.20, "lightness": 0.10}}
+  jewel tones     → adjust_palette {{"purity": 0.20, "contrast": 0.10}}
+  desaturated     → adjust_palette {{"saturation": -0.40}}
+  B&W             → adjust_palette {{"saturation": -1.0, "contrast": 0.50}}
+  complementary   → adjust_palette {{"hue": 180}}
 
 ━━ Workflow (follow this order) ━━
 1. Read the palette values below — note hue_angle, L, chroma for each color.
@@ -486,7 +493,7 @@ class Agent:
             "tools": TOOLS,
             "stream": True,
             "think": True,                      # enable Qwen3 reasoning tokens
-            "options": {"temperature": 0.4, "num_ctx": 32768},
+            "options": {"temperature": 0.4, "num_ctx": 8192},
         }
         resp = requests.post(
             f"{OLLAMA_BASE}/api/chat",
