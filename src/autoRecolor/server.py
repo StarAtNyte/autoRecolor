@@ -18,7 +18,7 @@ from autoRecolor.analyze import analyze_image
 from autoRecolor.palette import Palette
 from autoRecolor.recolor import recolor_image
 from autoRecolor.utils import hex_to_rgb
-from autoRecolor.agent import TOOLS, MODEL, OLLAMA_BASE, SYSTEM_PROMPT
+from autoRecolor.agent import TOOLS, MODEL, OLLAMA_BASE, SYSTEM_PROMPT, _slim_tool_result
 
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
@@ -103,6 +103,25 @@ async def stream_chat(sid: str, prompt: str):
     )
 
 
+_MAX_HISTORY = 40   # non-system messages kept; older tool msgs are condensed
+
+
+def _trim_context(messages: list[dict]) -> None:
+    """Condense old heavy tool messages once the history exceeds _MAX_HISTORY."""
+    non_sys = [m for m in messages if m["role"] != "system"]
+    if len(non_sys) <= _MAX_HISTORY:
+        return
+    cutoff = len(messages) - _MAX_HISTORY
+    for i, msg in enumerate(messages[:cutoff]):
+        if msg["role"] == "tool":
+            try:
+                data = json.loads(msg["content"])
+                if "palette" in data and isinstance(data["palette"], dict):
+                    messages[i]["content"] = json.dumps({"trimmed": True, "success": True})
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+
 async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
     palette: Palette = session["palette"]
     messages: list[dict] = session["messages"]
@@ -114,6 +133,8 @@ async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
 
     max_turns = 15
     for turn in range(max_turns):
+        _trim_context(messages)
+
         content = ""
         tool_calls = None
 
@@ -153,7 +174,9 @@ async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
 
             yield f"event: tool_call\ndata: {json.dumps({'name': func_name, 'args': args})}\n\n"
 
-            messages.append({"role": "tool", "content": json.dumps(result)})
+            # Store slimmed result to keep context lean; full palette is already in system prompt
+            slim = _slim_tool_result(func_name, result)
+            messages.append({"role": "tool", "content": json.dumps(slim)})
 
             if func_name == "finalize":
                 finalize_result = result.get("reasoning", "Done.")
@@ -169,11 +192,13 @@ async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
             yield f"event: done\ndata: {json.dumps({'reasoning': finalize_result})}\n\n"
             return
 
-        if turn == 0:
-            messages.append({
-                "role": "user",
-                "content": "Good. If you're done with all changes, call finalize now.",
-            })
+        # Escalating finalize pressure
+        nudge = (
+            "Good. If you're satisfied with all changes, call finalize now."
+            if turn == 0
+            else "All requested changes should now be applied. Call finalize to complete."
+        )
+        messages.append({"role": "user", "content": nudge})
 
     yield "event: done\ndata: {}\n\n"
 

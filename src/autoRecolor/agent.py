@@ -252,28 +252,93 @@ TOOLS = [
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 SYSTEM_PROMPT = """\
-You are an expert colorist AI. Edit the image palette using the available tools.
+You are an expert colorist AI. You edit image palettes using perceptual color science tools.
 
-Color space reference (OKLAB):
-  L = lightness  (0 = black, 1 = white)
-  a = green↔red  (negative = greener, positive = redder)
-  b = blue↔yellow (negative = bluer, positive = yellower)
-  chroma = √(a²+b²)  (0 = achromatic gray, ~0.4 = very vivid)
-  hue_angle = direction in ab-plane in degrees
+━━ OKLAB color space ━━
+  L  = lightness    (0=black … 1=white)
+  a  = green↔red    (−=greener, +=redder)
+  b  = blue↔yellow  (−=bluer,  +=yellower)
+  chroma    = √(a²+b²)   — colorfulness (0=gray, ~0.4=vivid)
+  hue_angle = atan2(b,a) — hue direction in degrees
 
-Rules:
-- Make BOLD, VISIBLE changes the user can actually see.
-- Prefer adjust_color / adjust_palette over update_color — perceptual axes give more natural results.
-- For global mood changes (warmer, cooler, more contrast, desaturated) use adjust_palette.
-- For individual color edits use adjust_color with the most relevant axes.
-- Use set_lightness when you want an exact tone; use match_lightness to align brightness between colors.
-- Call rate_palette after making edits to confirm harmony improved.
-- Batch multiple tool calls in a single response when possible.
-- Keep thinking VERY BRIEF — state what you'll change, then call tools.
-- When the user is satisfied, call finalize.
+━━ Tool selection guide ━━
+  adjust_palette  — global mood: warmth, contrast, saturation, overall hue shift
+  adjust_color    — one color: fine-tune its feel, fix clashes, change hue
+  set_lightness   — pin an exact tone (e.g. L=0.5 for mid-tone)
+  set_chroma      — pin an exact colorfulness (e.g. C=0.0 for gray)
+  match_lightness — make two colors tonally aligned
+  update_color    — only when the user gives an explicit hex
+  rate_palette    — check harmony after a round of edits
+  finalize        — always call when all changes are done
 
-Current palette:
+━━ Aesthetic recipes ━━  (use as starting points; adjust to taste)
+  warmer / golden hour  → adjust_palette warmth:+0.10  blue_yellow:+0.05
+  cooler / Nordic       → adjust_palette warmth:−0.10  blue_yellow:−0.05
+  vintage / retro       → adjust_palette mute:+0.15  warmth:+0.06  contrast:−0.10
+  dark / moody          → adjust_palette exposure:−0.40  contrast:+0.20
+  bright / airy         → adjust_palette exposure:+0.20  saturation:+0.15
+  vibrant / pop         → adjust_palette chroma:+0.08  contrast:+0.15
+  pastel / soft         → adjust_palette purity:−0.20  lightness:+0.10
+  jewel tones           → adjust_palette purity:+0.20  contrast:+0.10
+  desaturated / muted   → adjust_palette saturation:−0.40
+  high-contrast B&W     → adjust_palette saturation:−1.0  contrast:+0.50
+  complementary swap    → adjust_color hue:+180 on accent colors
+  warm shadows          → adjust_color warmth:+0.10  lightness:−0.05 on dark IDs
+
+━━ Rules ━━
+1. Make BOLD, VISIBLE changes — subtle ±0.02 edits are invisible to users.
+2. Issue ALL independent tool calls in a SINGLE response turn (batching saves latency).
+3. After edits, call rate_palette to confirm harmony improved; adjust if not.
+4. For multi-step changes: global adjust first, then per-color fine-tuning.
+5. One-line plan before tools: "I'll warm the whole palette then boost accent chroma."
+6. Call finalize as soon as the request is fulfilled — do not loop unnecessarily.
+
+━━ Current palette ━━
 {palette_json}"""
+
+
+# ── Tool response slimmer ─────────────────────────────────────────────────────
+
+def _slim_tool_result(func_name: str, result: dict) -> dict:
+    """
+    Reduce the token cost of tool results that contain redundant palette dumps.
+
+    adjust_palette returns the full palette dict on every call — after the
+    system prompt is already synced, sending the whole thing back wastes ~400
+    tokens per turn.  Instead we return a compact summary so the model still
+    gets confirmation without ballooning the context.
+    """
+    if func_name == "adjust_palette" and "palette" in result:
+        # Replace the full palette dump with a compact per-color summary
+        colors = result["palette"].get("palette", [])
+        summary = [
+            {"id": c["id"], "label": c["label"], "hex": c["hex"],
+             "L": round(c["oklab"][0], 3) if c.get("oklab") else None,
+             "chroma": c.get("chroma")}
+            for c in colors
+        ]
+        return {"success": True, "applied_to": len(colors), "colors": summary}
+
+    if func_name == "get_palette" and "palette" in result:
+        # get_palette is fine to return in full — it's an intentional read
+        return result
+
+    return result
+
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+_PALETTE_MUTATING = {
+    "update_color", "adjust_color", "adjust_palette",
+    "set_lightness", "set_chroma", "match_lightness",
+}
+
+# Tool responses that include a full palette dump — trim after keeping for 2 turns
+_HEAVY_TOOLS = {"adjust_palette", "get_palette"}
+
+# Max number of non-system messages to keep in the window.
+# Old *tool* result messages are condensed after this threshold to prevent OOM.
+_MAX_HISTORY = 40
 
 
 # ── Agent ─────────────────────────────────────────────────────────────────────
@@ -296,6 +361,28 @@ class Agent:
                 palette_json=self.palette.to_json()
             )
 
+    def _trim_context(self) -> None:
+        """
+        Once the history grows past _MAX_HISTORY non-system messages, compact
+        old *tool* result messages that contain heavy palette dumps to a short
+        summary stub.  This keeps the context window under control without
+        losing conversational coherence.
+        """
+        non_sys = [m for m in self.messages if m["role"] != "system"]
+        if len(non_sys) <= _MAX_HISTORY:
+            return
+
+        cutoff = len(self.messages) - _MAX_HISTORY
+        for i, msg in enumerate(self.messages[:cutoff]):
+            if msg["role"] == "tool":
+                try:
+                    data = json.loads(msg["content"])
+                    # Replace a heavy palette dump with a stub
+                    if "palette" in data and isinstance(data["palette"], dict):
+                        self.messages[i]["content"] = json.dumps({"trimmed": True, "success": True})
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
     def chat_stream(self, user_input: str) -> str:
         self.messages.append({"role": "user", "content": user_input})
         return self._run_loop_stream()
@@ -303,6 +390,7 @@ class Agent:
     def _run_loop_stream(self) -> str:
         max_turns = 15
         for _turn in range(max_turns):
+            self._trim_context()
             content, thinking, tool_calls = self._call_llm_stream()
 
             print()  # newline after streamed thinking
@@ -331,10 +419,6 @@ class Agent:
                 })
 
                 finalize_result: str | None = None
-                palette_mutating = {
-                    "update_color", "adjust_color", "adjust_palette",
-                    "set_lightness", "set_chroma", "match_lightness",
-                }
 
                 for tc, htc in zip(tool_calls, history_tool_calls):
                     func_name = htc["function"]["name"]
@@ -342,26 +426,31 @@ class Agent:
                     print(f"  ▶ {func_name}({json.dumps(args)})")
                     result = self._execute_tool(func_name, args)
 
+                    # Trim heavy palette responses to keep tool messages lean
+                    tool_content = _slim_tool_result(func_name, result)
                     self.messages.append({
                         "role": "tool",
-                        "content": json.dumps(result),
+                        "content": json.dumps(tool_content),
                     })
 
                     if func_name == "finalize":
                         finalize_result = result.get("reasoning", "Edits complete.")
                         print(f"  ✓ {finalize_result}")
 
-                    if func_name in palette_mutating:
+                    if func_name in _PALETTE_MUTATING:
                         self._sync_system_prompt()
 
                 if finalize_result is not None:
                     return finalize_result
 
-                if _turn == 0:
-                    self.messages.append({
-                        "role": "user",
-                        "content": "Good. If you're done with all changes, call finalize now.",
-                    })
+                # Escalating finalize pressure after the first turn
+                nudge = (
+                    "Good. If you're satisfied with all changes, call finalize now."
+                    if _turn == 0
+                    else "All requested changes should now be applied. Call finalize to complete."
+                )
+                self.messages.append({"role": "user", "content": nudge})
+
             else:
                 self.messages.append({"role": "assistant", "content": content})
                 if content:
@@ -376,7 +465,8 @@ class Agent:
             "messages": self.messages,
             "tools": TOOLS,
             "stream": True,
-            "options": {"temperature": 0.3},
+            "think": True,                      # enable Qwen3 reasoning tokens
+            "options": {"temperature": 0.4, "num_ctx": 32768},
         }
         resp = requests.post(
             f"{OLLAMA_BASE}/api/chat",
