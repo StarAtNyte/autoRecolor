@@ -147,7 +147,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
    SIDEBAR
 ════════════════════════════════ */
 .sidebar {
-  width: 400px; flex-shrink: 0;
+  width: 480px; flex-shrink: 0;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; height: 100%; overflow: hidden;
@@ -526,8 +526,8 @@ details.think.streaming summary {
   </div>
   <div class="topbar-actions">
     <!-- model status -->
-    <div style="display:flex;align-items:center;gap:5px;padding:0 4px;cursor:default" title="Ollama model status">
-      <span id="modelDot" style="width:7px;height:7px;border-radius:50%;background:#7a6e62;flex-shrink:0;transition:background .4s"></span>
+    <div id="modelStatus" style="display:flex;align-items:center;gap:5px;padding:0 6px;cursor:default;user-select:none" title="Ollama model status">
+      <span id="modelDot" style="width:7px;height:7px;border-radius:50%;background:var(--text-dim);flex-shrink:0;transition:background .4s"></span>
       <span id="modelLbl" style="font-size:11.5px;color:var(--text-dim);white-space:nowrap">Checking…</span>
     </div>
     <div class="divider"></div>
@@ -798,7 +798,6 @@ function stream(prompt) {
     firstEvent = false;
     removeTyping();
     STATUS_BAR.innerHTML = ''; STATUS_BAR.className = 'status-bar';
-    checkModelStatus();
   }
 
   src.addEventListener('message', e => {
@@ -1002,6 +1001,11 @@ function removeTyping() {
   if (typingRow) { typingRow.remove(); typingRow = null; }
 }
 
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
 // ── model status ──────────────────────────────────────────
 const MODEL_DOT = document.getElementById('modelDot');
 const MODEL_LBL = document.getElementById('modelLbl');
@@ -1012,24 +1016,24 @@ async function checkModelStatus() {
     const d = await r.json();
     if (d.loaded) {
       MODEL_DOT.style.background = '#6ab187';
+      MODEL_LBL.style.color = 'var(--text-dim)';
       MODEL_LBL.textContent = 'Model ready';
       MODEL_LBL.title = d.model + ' is in VRAM';
     } else {
       MODEL_DOT.style.background = '#e07b45';
+      MODEL_LBL.style.color = 'var(--text-dim)';
       MODEL_LBL.textContent = 'Model unloaded';
-      MODEL_LBL.title = 'First prompt will load the model';
+      MODEL_LBL.title = 'Will load on first prompt (~30s)';
     }
   } catch(_) {
-    MODEL_DOT.style.background = '#7a6e62';
+    MODEL_DOT.style.background = '#c0392b';
+    MODEL_LBL.style.color = 'var(--text-dim)';
     MODEL_LBL.textContent = 'Ollama offline';
+    MODEL_LBL.title = 'Cannot reach Ollama at localhost:11434';
   }
 }
 checkModelStatus();
-setInterval(checkModelStatus, 12000);
-
-function esc(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
+setInterval(checkModelStatus, 15000);
 </script>
 </body>
 </html>

@@ -139,11 +139,15 @@ async def _agent_loop(session: dict, prompt: str) -> AsyncGenerator[str]:
         tool_calls = None
 
         # Stream thinking tokens live; collect content + tool_calls for processing
-        async for event, *payload in _call_llm(messages):
-            if event == "thinking":
-                yield f"event: thinking\ndata: {json.dumps({'chunk': payload[0]})}\n\n"
-            elif event == "done":
-                content, tool_calls = payload
+        try:
+            async for event, *payload in _call_llm(messages):
+                if event == "thinking":
+                    yield f"event: thinking\ndata: {json.dumps({'chunk': payload[0]})}\n\n"
+                elif event == "done":
+                    content, tool_calls = payload
+        except Exception as exc:
+            yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+            return
 
         if not tool_calls:
             messages.append({"role": "assistant", "content": content})
