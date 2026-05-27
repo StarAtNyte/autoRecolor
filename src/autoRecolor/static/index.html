@@ -95,18 +95,9 @@ body { display: flex; flex-direction: column; overflow: hidden; }
   display: flex; align-items: center; gap: 8px; padding: 0 16px;
   transition: background .2s, border-color .2s;
 }
-.brand { display: flex; align-items: center; gap: 8px; flex: 1; }
-.brand-icon {
-  width: 28px; height: 28px; border-radius: 7px; flex-shrink: 0;
-  background: linear-gradient(135deg, #c96040, #e88060);
-  display: flex; align-items: center; justify-content: center; font-size: 14px;
-}
-.brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.1px; color: var(--text); }
-.brand-tag {
-  font-size: 10px; font-weight: 500; letter-spacing: .4px; text-transform: uppercase;
-  color: var(--text-dim); background: var(--s2); border: 1px solid var(--border2);
-  padding: 1px 6px; border-radius: 4px;
-}
+.brand { display: flex; align-items: center; gap: 9px; flex: 1; }
+.brand-logo { width: 30px; height: 30px; flex-shrink: 0; }
+.brand-name { font-size: 14px; font-weight: 600; letter-spacing: -.2px; color: var(--text); }
 
 .topbar-actions { display: flex; align-items: center; gap: 6px; }
 
@@ -597,7 +588,7 @@ details.think.streaming summary {
   .palette-cards { max-height: 160px; }
   .main { min-height: 50vh; }
   .messages-wrap { overflow: visible; }
-  .brand-tag { display: none; }
+
 }
 </style>
 </head>
@@ -606,9 +597,30 @@ details.think.streaming summary {
 <!-- topbar -->
 <div class="topbar">
   <div class="brand">
-    <div class="brand-icon">🎨</div>
+    <!-- logo: image frame with colour-wheel arc -->
+    <svg class="brand-logo" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="lg1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%"   stop-color="#c96040"/>
+          <stop offset="100%" stop-color="#e8a060"/>
+        </linearGradient>
+        <linearGradient id="lg2" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%"   stop-color="#5ba8e0"/>
+          <stop offset="33%"  stop-color="#6ab187"/>
+          <stop offset="66%"  stop-color="#e0c050"/>
+          <stop offset="100%" stop-color="#c96040"/>
+        </linearGradient>
+      </defs>
+      <!-- rounded frame -->
+      <rect x="2" y="2" width="26" height="26" rx="7" fill="url(#lg1)"/>
+      <!-- image placeholder lines -->
+      <rect x="6" y="7" width="18" height="11" rx="2.5" fill="rgba(255,255,255,0.18)"/>
+      <!-- mountain silhouette -->
+      <path d="M6 18l4.5-5 3.5 4 2.5-3 7.5 4z" fill="rgba(255,255,255,0.28)" clip-path="inset(0 0 0 0 round 2.5px)"/>
+      <!-- colour arc -->
+      <path d="M7 24 Q15 19 23 24" stroke="url(#lg2)" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
     <span class="brand-name">autoRecolor</span>
-    <span class="brand-tag">OKLAB</span>
   </div>
   <div class="topbar-actions">
     <!-- model status -->
