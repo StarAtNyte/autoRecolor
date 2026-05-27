@@ -344,6 +344,27 @@ async def model_status():
         return {"loaded": False, "model": MODEL, "error": str(e)}
 
 
+@app.post("/preload")
+async def preload_model():
+    """
+    Tell Ollama to load the model into VRAM immediately.
+    Uses an empty-prompt generate request with keep_alive so it stays warm.
+    Returns quickly — actual loading happens asynchronously in Ollama.
+    """
+    import asyncio
+    async def _load():
+        try:
+            async with httpx.AsyncClient(timeout=300) as client:
+                await client.post(
+                    f"{OLLAMA_BASE}/api/generate",
+                    json={"model": MODEL, "prompt": "", "keep_alive": "30m"},
+                )
+        except Exception:
+            pass
+    asyncio.create_task(_load())
+    return {"status": "loading", "model": MODEL}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html = STATIC / "index.html"

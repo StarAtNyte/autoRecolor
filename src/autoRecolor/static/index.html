@@ -83,6 +83,7 @@ body { display: flex; flex-direction: column; overflow: hidden; }
 @keyframes spin   { to{transform:rotate(360deg)} }
 @keyframes shimmer{ 0%{background-position:-200% center} 100%{background-position:200% center} }
 @keyframes fadeIn { from{opacity:0} to{opacity:1} }
+@keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:0.3} }
 
 /* ════════════════════════════════
    TOPBAR
@@ -1010,30 +1011,57 @@ function esc(s) {
 const MODEL_DOT = document.getElementById('modelDot');
 const MODEL_LBL = document.getElementById('modelLbl');
 
+let modelLoaded = false;
+let modelPollInterval = null;
+
+function setModelState(state, label, title) {
+  const colors = { ready: '#6ab187', loading: '#e0a020', offline: '#c0392b', unknown: 'var(--text-dim)' };
+  MODEL_DOT.style.background = colors[state] || colors.unknown;
+  MODEL_LBL.textContent = label;
+  MODEL_LBL.title = title || '';
+  // pulse animation while loading
+  MODEL_DOT.style.animation = state === 'loading' ? 'pulse 1.2s ease-in-out infinite' : 'none';
+}
+
 async function checkModelStatus() {
   try {
     const r = await fetch('/model-status');
     const d = await r.json();
     if (d.loaded) {
-      MODEL_DOT.style.background = '#6ab187';
-      MODEL_LBL.style.color = 'var(--text-dim)';
-      MODEL_LBL.textContent = 'Model ready';
-      MODEL_LBL.title = d.model + ' is in VRAM';
+      modelLoaded = true;
+      setModelState('ready', 'Model ready', d.model + ' is in VRAM');
+      // slow down polling once loaded
+      if (modelPollInterval) { clearInterval(modelPollInterval); modelPollInterval = setInterval(checkModelStatus, 20000); }
     } else {
-      MODEL_DOT.style.background = '#e07b45';
-      MODEL_LBL.style.color = 'var(--text-dim)';
-      MODEL_LBL.textContent = 'Model unloaded';
-      MODEL_LBL.title = 'Will load on first prompt (~30s)';
+      setModelState('loading', 'Model loading…', 'Loading ' + d.model + ' into VRAM');
     }
   } catch(_) {
-    MODEL_DOT.style.background = '#c0392b';
-    MODEL_LBL.style.color = 'var(--text-dim)';
-    MODEL_LBL.textContent = 'Ollama offline';
-    MODEL_LBL.title = 'Cannot reach Ollama at localhost:11434';
+    setModelState('offline', 'Ollama offline', 'Cannot reach Ollama at localhost:11434');
+    if (modelPollInterval) { clearInterval(modelPollInterval); modelPollInterval = setInterval(checkModelStatus, 20000); }
   }
 }
-checkModelStatus();
-setInterval(checkModelStatus, 15000);
+
+async function startPreload() {
+  try {
+    const r = await fetch('/model-status');
+    const d = await r.json();
+    if (d.loaded) {
+      modelLoaded = true;
+      setModelState('ready', 'Model ready', d.model + ' is in VRAM');
+      modelPollInterval = setInterval(checkModelStatus, 20000);
+    } else {
+      // trigger preload, then poll fast until loaded
+      setModelState('loading', 'Model loading…', 'Warming up model — ready in ~30s');
+      fetch('/preload', { method: 'POST' }).catch(() => {});
+      modelPollInterval = setInterval(checkModelStatus, 3000);
+    }
+  } catch(_) {
+    setModelState('offline', 'Ollama offline', 'Cannot reach Ollama at localhost:11434');
+    modelPollInterval = setInterval(checkModelStatus, 20000);
+  }
+}
+
+startPreload();
 </script>
 </body>
 </html>
