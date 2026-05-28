@@ -772,6 +772,18 @@ details.think.streaming summary {
   font-family: var(--mono); font-size: 11px; color: var(--text-faint);
   user-select: none;
 }
+.model-select {
+  appearance: none; -webkit-appearance: none;
+  background: none; border: 1px solid transparent;
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  cursor: pointer; padding: 3px 18px 3px 7px; border-radius: 6px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%236e6986' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 4px center;
+  transition: border-color .15s, color .15s, background-color .15s;
+}
+.model-select:hover { border-color: var(--border2); color: var(--text); background-color: var(--s2); }
+.model-select:focus { outline: none; border-color: var(--accent); color: var(--text); background-color: var(--s2); }
+.model-select option { background: var(--s1); color: var(--text); }
 .send-btn {
   width: 32px; height: 32px; border-radius: 9px; border: none;
   background: linear-gradient(135deg, #ff3da8 0%, #c61c7e 100%);
@@ -952,14 +964,14 @@ details.think.streaming summary {
         <textarea id="textareaInput" placeholder="Describe the recolor you want…" disabled rows="1"></textarea>
         <div class="input-foot">
           <div style="display:flex;align-items:center;gap:8px">
-            <button class="think-toggle active" id="thinkBtn" title="Reasoning ON — model reasons before acting">
+            <button class="think-toggle" id="thinkBtn" title="Reasoning OFF — click to enable">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M8 2a5 5 0 014 8l-.4.4V13a1 1 0 01-1 1H5.4a1 1 0 01-1-1v-2.6L4 10A5 5 0 018 2z"/>
                 <line x1="6" y1="12.5" x2="10" y2="12.5"/>
               </svg>
               Reasoning
             </button>
-            <span class="model-tag" id="composerModelTag">qwen3.6:27b · think</span>
+            <select class="model-select" id="modelSelect"></select>
           </div>
           <button class="send-btn" id="sendBtnReal" disabled title="Send (Enter)">
             <svg id="iconSend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -1004,17 +1016,36 @@ const THEME_BTN     = document.getElementById('themeBtn');
 const COMPARE_BTN   = document.getElementById('compareBtn');
 const DOWNLOAD_BTN  = document.getElementById('downloadBtn');
 const THINK_BTN     = document.getElementById('thinkBtn');
-const COMPOSER_MODEL_TAG = document.getElementById('composerModelTag');
+const MODEL_SELECT = document.getElementById('modelSelect');
 
-let thinkMode = true;
+let modelList = [];
+let thinkMode = false;
+
+async function loadModels() {
+  try {
+    const res = await fetch('/models');
+    const data = await res.json();
+    modelList = data.models;
+    const providerTag = { ollama: '· local', nim: '· NIM', openrouter: '· OpenRouter', google: '· Google' };
+    MODEL_SELECT.innerHTML = modelList.map(m =>
+      `<option value="${m.id}">${m.label} ${providerTag[m.provider] || ''}</option>`
+    ).join('');
+    // Default to Gemini 2.5 Flash, fallback to local
+    const preferred = modelList.find(m => m.id === 'gemini-2.5-flash') || modelList.find(m => m.provider === 'ollama');
+    if (preferred) MODEL_SELECT.value = preferred.id;
+  } catch (e) {
+    MODEL_SELECT.innerHTML = '<option value="qwen3.6:27b">Qwen 3.6 27B · local</option>';
+  }
+}
+
+loadModels();
+
 THINK_BTN.addEventListener('click', () => {
   thinkMode = !thinkMode;
   THINK_BTN.classList.toggle('active', thinkMode);
   THINK_BTN.title = thinkMode
     ? 'Reasoning ON — slower but more accurate'
     : 'Reasoning OFF — faster responses';
-  // model tag reflects current mode
-  COMPOSER_MODEL_TAG.textContent = thinkMode ? 'qwen3.6:27b · think' : 'qwen3.6:27b';
 });
 const COMPARE_LBL   = document.getElementById('compareLabel');
 const PREVIEW_NEW_BTN = document.getElementById('previewNewBtn');
@@ -1272,14 +1303,13 @@ const TOOL_LABELS = {
   set_chroma:      'set chroma',
   match_lightness: 'match lightness',
   rate_palette:    'rate harmony',
-  relabel_color:   'relabel',
   finalize:        'finalize',
   // legacy
   adjust_hsl:      'adjust HSL',
 };
 
 function stream(prompt) {
-  const url = `/stream/${sessionId}?prompt=${encodeURIComponent(prompt)}&think=${thinkMode}`;
+  const url = `/stream/${sessionId}?prompt=${encodeURIComponent(prompt)}&think=${thinkMode}&model=${encodeURIComponent(MODEL_SELECT.value)}`;
   const src = new EventSource(url);
   activeSrc = src;
 

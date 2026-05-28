@@ -20,6 +20,31 @@ from autoRecolor.recolor import recolor_image
 from autoRecolor.utils import hex_to_rgb
 from autoRecolor.agent import TOOLS, MODEL, OLLAMA_BASE, SYSTEM_PROMPT, _slim_tool_result
 
+import os
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
+NIM_API_KEY        = os.getenv("NIM_API_KEY", "")
+NIM_BASE           = "https://integrate.api.nvidia.com/v1"
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_BASE    = "https://openrouter.ai/api/v1"
+GOOGLE_API_KEY     = os.getenv("GOOGLE_API_KEY", "")
+GOOGLE_BASE        = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+MODEL_LIST = [
+    {"id": "qwen3.6:27b",                          "label": "Qwen 3.6 27B",      "provider": "ollama",     "think": True},
+    {"id": "anthropic/claude-sonnet-4-5",          "label": "Claude Sonnet 4.5", "provider": "openrouter", "think": False},
+    {"id": "google/gemini-2.5-flash",              "label": "Gemini 2.5 Flash",  "provider": "openrouter", "think": False},
+    {"id": "meta/llama-3.3-70b-instruct",          "label": "Llama 3.3 70B",    "provider": "nim",        "think": False},
+    {"id": "deepseek/deepseek-chat-v3-0324",       "label": "DeepSeek V3",       "provider": "openrouter", "think": False},
+    {"id": "meta-llama/llama-3.3-70b-instruct",    "label": "Llama 3.3 70B",    "provider": "openrouter", "think": False},
+    {"id": "mistralai/mistral-large-2411",         "label": "Mistral Large",     "provider": "openrouter", "think": False},
+    {"id": "google/gemma-4-31b-it",                "label": "Gemma 4 31B",       "provider": "nim",        "think": False},
+    # Google AI Studio — free tier
+    {"id": "gemini-2.5-flash",                     "label": "Gemini 2.5 Flash",  "provider": "google",     "think": True},
+    {"id": "gemini-2.0-flash",                     "label": "Gemini 2.0 Flash",  "provider": "google",     "think": False},
+]
+_MODEL_MAP = {m["id"]: m for m in MODEL_LIST}
+
 HERE = Path(__file__).parent
 STATIC = HERE / "static"
 TEMP = HERE / ".uploads"
@@ -119,8 +144,13 @@ async def load_default():
     }
 
 
+@app.get("/models")
+async def list_models():
+    return {"models": MODEL_LIST}
+
+
 @app.get("/stream/{sid}")
-async def stream_chat(sid: str, prompt: str, think: bool = True):
+async def stream_chat(sid: str, prompt: str, think: bool = True, model: str = "qwen3.6:27b"):
     session = sessions.get(sid)
     if not session:
         return StreamingResponse(
@@ -129,7 +159,7 @@ async def stream_chat(sid: str, prompt: str, think: bool = True):
         )
 
     return StreamingResponse(
-        _agent_loop(session, prompt, think=think),
+        _agent_loop(session, prompt, think=think, model=model),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -157,7 +187,20 @@ def _trim_context(messages: list[dict]) -> None:
                 pass
 
 
-async def _agent_loop(session: dict, prompt: str, think: bool = True) -> AsyncGenerator[str]:
+def _parse_args(raw: str) -> dict:
+    """Parse tool call arguments — handles valid JSON and Python-style single-quoted dicts."""
+    import ast
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+    try:
+        return ast.literal_eval(raw)
+    except Exception:
+        return {}
+
+
+async def _agent_loop(session: dict, prompt: str, think: bool = True, model: str = "qwen3.6:27b") -> AsyncGenerator[str]:
     palette: Palette = session["palette"]
     messages: list[dict] = session["messages"]
     original = session["original_palette"]
@@ -175,13 +218,19 @@ async def _agent_loop(session: dict, prompt: str, think: bool = True) -> AsyncGe
 
         # Stream thinking tokens live; collect content + tool_calls for processing
         try:
-            async for event, *payload in _call_llm(messages, think=think):
+            async for event, *payload in _call_llm(messages, think=think, model=model):
                 if event == "thinking":
                     yield f"event: thinking\ndata: {json.dumps({'chunk': payload[0]})}\n\n"
                 elif event == "done":
                     content, tool_calls = payload
         except Exception as exc:
-            yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+            err = str(exc)
+            meta = _MODEL_MAP.get(model, {})
+            if meta.get("provider") != "ollama" and ("402" in err or "credit" in err.lower() or "limit" in err.lower()):
+                msg = "Usage limit reached for this model. Switch to **Qwen 3.6 27B · local** to continue."
+            else:
+                msg = err
+            yield f"event: error\ndata: {json.dumps({'error': msg})}\n\n"
             return
 
         if not tool_calls:
@@ -192,30 +241,30 @@ async def _agent_loop(session: dict, prompt: str, think: bool = True) -> AsyncGe
         history_tool_calls = []
         for tc in tool_calls:
             raw_args = tc["function"]["arguments"]
-            dict_args = raw_args if isinstance(raw_args, dict) else json.loads(raw_args)
+            dict_args = raw_args if isinstance(raw_args, dict) else _parse_args(raw_args)
             history_tool_calls.append({
                 "id": tc.get("id", ""),
                 "type": "function",
-                "function": {"name": tc["function"]["name"], "arguments": dict_args},
+                # Keep arguments as JSON string — required by OpenAI-compatible APIs (NIM, OR)
+                "function": {"name": tc["function"]["name"], "arguments": json.dumps(dict_args)},
             })
 
-        messages.append({
-            "role": "assistant",
-            "content": content,
-            "tool_calls": history_tool_calls,
-        })
+        asst_msg = {"role": "assistant", "tool_calls": history_tool_calls}
+        if content:
+            asst_msg["content"] = content
+        messages.append(asst_msg)
 
         finalize_result = None
         for tc, htc in zip(tool_calls, history_tool_calls):
             func_name = htc["function"]["name"]
-            args = htc["function"]["arguments"]
-            result = _execute_tool(palette, func_name, args)
+            args_str  = htc["function"]["arguments"]
+            args      = _parse_args(args_str) if isinstance(args_str, str) else args_str
+            result    = _execute_tool(palette, func_name, args)
 
             yield f"event: tool_call\ndata: {json.dumps({'name': func_name, 'args': args})}\n\n"
 
-            # Store slimmed result to keep context lean; full palette is already in system prompt
             slim = _slim_tool_result(func_name, result)
-            messages.append({"role": "tool", "content": json.dumps(slim)})
+            messages.append({"role": "tool", "tool_call_id": htc["id"], "content": json.dumps(slim)})
 
             if func_name == "finalize":
                 finalize_result = result.get("reasoning", "Done.")
@@ -242,65 +291,122 @@ async def _agent_loop(session: dict, prompt: str, think: bool = True) -> AsyncGe
     yield "event: done\ndata: {}\n\n"
 
 
-async def _call_llm(messages: list[dict], think: bool = True):
+def _acc_tool_call(acc: dict[int, dict], tc: dict) -> None:
+    """Merge a streaming tool_call delta into the accumulator."""
+    idx = tc.get("index", len(acc))
+    if idx not in acc:
+        acc[idx] = {"id": tc.get("id", f"call_{idx}"), "type": "function",
+                    "function": {"name": "", "arguments": ""}}
+    entry = acc[idx]
+    if "id" in tc:
+        entry["id"] = tc["id"]
+    fn = tc.get("function") or {}
+    if fn.get("name"):
+        entry["function"]["name"] += fn["name"]
+    if "arguments" in fn:
+        raw = fn["arguments"]
+        if raw is not None:
+            entry["function"]["arguments"] += json.dumps(raw) if isinstance(raw, dict) else raw
+
+
+async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen3.6:27b"):
     """
     Async generator.
-    Yields: ("thinking", chunk_str)  — one per streamed thinking token
+    Yields: ("thinking", chunk_str)
     Final:  ("done", content, tool_calls)
     """
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "tools": TOOLS,
-        "stream": True,
-        "think": think,
-        "options": {"temperature": 0.3, "num_ctx": 8192},
-    }
+    meta = _MODEL_MAP.get(model, MODEL_LIST[0])
+    provider = meta["provider"]
+
     content = ""
     tool_calls_acc: dict[int, dict] = {}
 
-    async with httpx.AsyncClient(timeout=300) as client:
-        async with client.stream("POST", f"{OLLAMA_BASE}/api/chat", json=payload) as resp:
-            if not resp.is_success:
-                body = await resp.aread()
-                raise RuntimeError(f"Ollama {resp.status_code}: {body[:400]}")
+    if provider == "ollama":
+        payload = {
+            "model": model,
+            "messages": messages,
+            "tools": TOOLS,
+            "stream": True,
+            "think": think,
+            "options": {"temperature": 0.3, "num_ctx": 8192},
+        }
+        async with httpx.AsyncClient(timeout=300) as client:
+            async with client.stream("POST", f"{OLLAMA_BASE}/api/chat", json=payload) as resp:
+                if not resp.is_success:
+                    body = await resp.aread()
+                    raise RuntimeError(f"Ollama {resp.status_code}: {body[:400]}")
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    chunk = json.loads(line)
+                    msg = chunk.get("message", {})
+                    if "thinking" in msg and msg["thinking"]:
+                        yield "thinking", msg["thinking"]
+                    if "content" in msg:
+                        content += msg["content"]
+                    for tc in (msg.get("tool_calls") or []):
+                        _acc_tool_call(tool_calls_acc, tc)
+                    if chunk.get("done"):
+                        break
 
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                chunk = json.loads(line)
-                msg = chunk.get("message", {})
+    else:  # NIM / OpenRouter / Google — OpenAI-compatible
+        if provider == "nim":
+            base_url      = f"{NIM_BASE}/chat/completions"
+            auth          = NIM_API_KEY
+            extra_headers = {}
+        elif provider == "google":
+            base_url      = f"{GOOGLE_BASE}/chat/completions"
+            auth          = GOOGLE_API_KEY
+            extra_headers = {}
+        else:
+            base_url      = f"{OPENROUTER_BASE}/chat/completions"
+            auth          = OPENROUTER_API_KEY
+            extra_headers = {"HTTP-Referer": "http://localhost:8010", "X-Title": "autoRecolor"}
 
-                if "thinking" in msg and msg["thinking"]:
-                    yield "thinking", msg["thinking"]
+        headers = {"Authorization": f"Bearer {auth}", "Content-Type": "application/json", **extra_headers}
 
-                if "content" in msg:
-                    content += msg["content"]
+        if provider == "google":
+            # Google streaming doesn't return tool calls — use non-streaming
+            payload = {"model": model, "messages": messages, "tools": TOOLS,
+                       "temperature": 0.3, "max_tokens": 4096}
+            async with httpx.AsyncClient(timeout=300) as client:
+                resp = await client.post(base_url, json=payload, headers=headers)
+                if not resp.is_success:
+                    raise RuntimeError(f"GOOGLE {resp.status_code}: {resp.content[:400]}")
+                msg = resp.json()["choices"][0]["message"]
+                content = msg.get("content") or ""
+                for tc in (msg.get("tool_calls") or []):
+                    _acc_tool_call(tool_calls_acc, tc)
+            tool_calls = list(tool_calls_acc.values()) if tool_calls_acc else None
+            yield "done", content, tool_calls
+            return
 
-                if "tool_calls" in msg:
-                    for tc in msg["tool_calls"]:
-                        idx = tc.get("index", len(tool_calls_acc))
-                        if idx not in tool_calls_acc:
-                            tool_calls_acc[idx] = {
-                                "id": tc.get("id", f"call_{idx}"),
-                                "type": "function",
-                                "function": {"name": "", "arguments": ""},
-                            }
-                        acc = tool_calls_acc[idx]
-                        if "id" in tc:
-                            acc["id"] = tc["id"]
-                        fn = tc.get("function", {})
-                        if "name" in fn:
-                            acc["function"]["name"] += fn["name"]
-                        if "arguments" in fn:
-                            raw = fn["arguments"]
-                            if isinstance(raw, dict):
-                                acc["function"]["arguments"] = json.dumps(raw)
-                            else:
-                                acc["function"]["arguments"] += raw
+        payload = {
+            "model": model,
+            "messages": messages,
+            "tools": TOOLS,
+            "stream": True,
+            "temperature": 0.3,
+            "max_tokens": 2048 if provider == "openrouter" else 4096,
+        }
 
-                if chunk.get("done"):
-                    break
+        async with httpx.AsyncClient(timeout=300) as client:
+            async with client.stream("POST", base_url, json=payload, headers=headers) as resp:
+                if not resp.is_success:
+                    body = await resp.aread()
+                    raise RuntimeError(f"{provider.upper()} {resp.status_code}: {body[:400]}")
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    chunk = json.loads(data)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    if delta.get("content"):
+                        content += delta["content"]
+                    for tc in (delta.get("tool_calls") or []):
+                        _acc_tool_call(tool_calls_acc, tc)
 
     tool_calls = list(tool_calls_acc.values()) if tool_calls_acc else None
     yield "done", content, tool_calls

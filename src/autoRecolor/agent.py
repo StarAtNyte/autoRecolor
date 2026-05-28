@@ -211,23 +211,6 @@ TOOLS = [
         },
     },
 
-    # ── Label ──────────────────────────────────────────────────────────────────
-    {
-        "type": "function",
-        "function": {
-            "name": "relabel_color",
-            "description": "Rename a color's label to better describe what it represents in the image.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "color_id": {"type": "integer"},
-                    "label":    {"type": "string", "description": "New descriptive label"},
-                },
-                "required": ["color_id", "label"],
-            },
-        },
-    },
-
     # ── Finalize ───────────────────────────────────────────────────────────────
     {
         "type": "function",
@@ -296,7 +279,6 @@ You are an expert colorist AI. You edit image palettes using perceptual color sc
   match_lightness — copy brightness from one color to another
   update_color    — only when user gives an explicit hex code
   rate_palette    — check harmony score
-  relabel_color   — rename after hue/character changes
   finalize        — call when done
 
 ━━ Mood recipes ━━
@@ -312,13 +294,18 @@ You are an expert colorist AI. You edit image palettes using perceptual color sc
   B&W             → adjust_palette {{"saturation": -1.0, "contrast": 0.50}}
   complementary   → adjust_palette {{"hue": 180}}
 
-━━ Workflow (follow this order) ━━
-1. Read the palette values below — note hue_angle, L, chroma for each color.
-2. State your plan in one line (what you'll change and why).
-3. Compute exact deltas from the actual palette values, not from memory.
+━━ Workflow ━━
+1. Read the palette — note hue_angle, L, chroma for each color.
+2. Decide your plan. Commit to it immediately — do not revise mid-execution.
+3. Compute deltas once from the actual values. Do not recalculate or second-guess.
 4. Issue ALL tool calls in one turn.
-5. After any hue/character change, relabel the affected colors.
-6. Call rate_palette, then finalize.
+5. Call finalize.
+
+Rules:
+- No "wait", no "actually", no mid-stream plan changes. Decide → execute → done.
+- One turn for all edits. Never split across multiple assistant turns.
+- Skip rate_palette unless the user asks about harmony.
+- NEVER use blue_yellow or green_red to shift hue family. Those axes only nudge; they produce wrong colors (pink instead of blue, etc.). For any hue family change use the hue axis with the correct degree delta.
 
 ━━ Current palette ━━
 {palette_json}"""
@@ -592,10 +579,6 @@ class Agent:
                     score = self.palette.harmony_score()
                     return {"harmony_score": score, "interpretation":
                             "good" if score > 0.2 else "neutral" if score > -0.2 else "low"}
-
-                case "relabel_color":
-                    self.palette.relabel(args["color_id"], args["label"])
-                    return {"success": True}
 
                 case "finalize":
                     return {"success": True, "reasoning": args.get("reasoning", "")}
