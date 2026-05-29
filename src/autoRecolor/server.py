@@ -367,8 +367,10 @@ async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen
 
         if provider == "google":
             # Google streaming doesn't return tool calls — use non-streaming
+            # thinking_budget: 0 = off, -1 = dynamic (default on for 2.5 Flash)
             payload = {"model": model, "messages": messages, "tools": TOOLS,
-                       "temperature": 0.3, "max_tokens": 4096}
+                       "temperature": 0.3, "max_tokens": 4096,
+                       "reasoning_effort": "high" if think else "none"}
             async with httpx.AsyncClient(timeout=300) as client:
                 resp = await client.post(base_url, json=payload, headers=headers)
                 if not resp.is_success:
@@ -414,7 +416,7 @@ async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen
 
 _PALETTE_MUTATING = {
     "update_color", "adjust_color", "adjust_palette",
-    "set_lightness", "set_chroma", "match_lightness",
+    "set_lightness", "set_chroma", "set_hue", "match_lightness",
     # legacy
     "adjust_hsl",
 }
@@ -439,6 +441,9 @@ def _execute_tool(palette: Palette, name: str, args: dict) -> dict:
                 return {"success": True, "entry": palette.get_entry(args["color_id"]).to_info_dict()}
             case "set_chroma":
                 palette.set_chroma(args["color_id"], float(args["C"]))
+                return {"success": True, "entry": palette.get_entry(args["color_id"]).to_info_dict()}
+            case "set_hue":
+                palette.set_hue(args["color_id"], float(args["target_hue"]))
                 return {"success": True, "entry": palette.get_entry(args["color_id"]).to_info_dict()}
             case "match_lightness":
                 palette.match_lightness(args["source_id"], args["target_id"])

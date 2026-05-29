@@ -176,6 +176,28 @@ TOOLS = [
         },
     },
 
+    # ── Absolute hue set ──────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "set_hue",
+            "description": (
+                "Set the absolute hue angle of a color (0–360°), preserving its lightness and chroma. "
+                "Use this for any hue family change — it's simpler and more reliable than computing deltas.\n"
+                "Target angles: red=15  orange=45  yellow=75  lime=110  green=150  "
+                "cyan=185  blue=230  indigo=260  purple=290  magenta=320  pink=345"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "color_id": {"type": "integer", "description": "ID of the color to change"},
+                    "target_hue": {"type": "number", "description": "Target hue angle in degrees (0–360)"},
+                },
+                "required": ["color_id", "target_hue"],
+            },
+        },
+    },
+
     # ── Lightness matching ─────────────────────────────────────────────────────
     {
         "type": "function",
@@ -251,20 +273,14 @@ You are an expert colorist AI. You edit image palettes using perceptual color sc
   red=15  orange=45  yellow=75  lime=110  green=150
   cyan=185  blue=230  indigo=260  purple=290  magenta=320  pink=345
 
-  HOW TO SHIFT HUE (do this every time):
-  1. Read the hue_angle of the colors in the palette below.
-  2. Pick the target angle from the table above.
-  3. raw_Δ = target − current_hue_angle.
-  4. Wrap to shortest path: if raw_Δ > 180 subtract 360; if raw_Δ < −180 add 360.
-  5. Call adjust_palette with that wrapped Δhue value.
+  TO CHANGE A COLOR'S HUE FAMILY → use set_hue with the target angle directly.
+  No delta math needed — set_hue takes the absolute target:
+    green → red:    set_hue(id, 15)
+    green → blue:   set_hue(id, 230)
+    orange → cyan:  set_hue(id, 185)
 
-  Examples (shortest-path wrapping):
-    green(150) → blue(230):     230−150 =  +80            → {{"hue":  80}}
-    orange(45) → purple(290):   290−45  = +245 → 245−360 = −115 → {{"hue": −115}}
-    blue(230)  → red(15):       15−230  = −215 → −215+360 = +145 → {{"hue": +145}}
-    cyan(185)  → magenta(320):  320−185 = +135            → {{"hue": 135}}
-    pink(345)  → lime(110):     110−345 = −235 → −235+360 = +125 → {{"hue": 125}}
-    yellow(75) → indigo(260):   260−75  = +185 → 185−360 = −175 → {{"hue": −175}}
+  Use adjust_color/adjust_palette hue axis ONLY for small tweaks (±30° or less).
+  For those, raw_Δ = target − current. Wrap if needed: >180 → subtract 360; <−180 → add 360.
 
 ━━ Lightness / chroma quick reads ━━
   L < 0.25 = very dark   L 0.25–0.45 = dark   L 0.45–0.60 = mid
@@ -272,8 +288,9 @@ You are an expert colorist AI. You edit image palettes using perceptual color sc
   chroma < 0.08 = muted/gray   0.08–0.18 = moderate   > 0.18 = vivid
 
 ━━ Tool selection ━━
-  adjust_palette  — global changes (hue family, mood, contrast, saturation)
-  adjust_color    — single color tweak
+  set_hue         — change hue family of one color (PREFERRED for hue changes)
+  adjust_palette  — global mood changes (warmth, contrast, saturation, small hue tweak)
+  adjust_color    — fine-tune a single color's feel (lightness, chroma, warmth, small hue tweak)
   set_lightness   — exact tone (L value)
   set_chroma      — exact colorfulness (C value)
   match_lightness — copy brightness from one color to another
@@ -302,10 +319,11 @@ You are an expert colorist AI. You edit image palettes using perceptual color sc
 5. Call finalize.
 
 Rules:
+- Make BOLD, VISIBLE changes — subtle ±0.02 edits are invisible. A hue family change needs the full target angle, not a tiny nudge.
 - No "wait", no "actually", no mid-stream plan changes. Decide → execute → done.
 - One turn for all edits. Never split across multiple assistant turns.
 - Skip rate_palette unless the user asks about harmony.
-- NEVER use blue_yellow or green_red to shift hue family. Those axes only nudge; they produce wrong colors (pink instead of blue, etc.). For any hue family change use the hue axis with the correct degree delta.
+- NEVER use blue_yellow or green_red to shift hue family. Those axes only nudge; they produce wrong colors (pink instead of blue, etc.). Use set_hue instead.
 
 ━━ Current palette ━━
 {palette_json}"""
@@ -567,6 +585,11 @@ class Agent:
 
                 case "set_chroma":
                     self.palette.set_chroma(args["color_id"], float(args["C"]))
+                    entry = self.palette.get_entry(args["color_id"])
+                    return {"success": True, "entry": entry.to_info_dict()}
+
+                case "set_hue":
+                    self.palette.set_hue(args["color_id"], float(args["target_hue"]))
                     entry = self.palette.get_entry(args["color_id"])
                     return {"success": True, "entry": entry.to_info_dict()}
 

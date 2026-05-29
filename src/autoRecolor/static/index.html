@@ -1019,7 +1019,7 @@ const THINK_BTN     = document.getElementById('thinkBtn');
 const MODEL_SELECT = document.getElementById('modelSelect');
 
 let modelList = [];
-let thinkMode = false;
+let thinkMode = true;
 
 async function loadModels() {
   try {
@@ -1040,6 +1040,8 @@ async function loadModels() {
 
 loadModels();
 
+THINK_BTN.classList.add('active');
+THINK_BTN.title = 'Reasoning ON — slower but more accurate';
 THINK_BTN.addEventListener('click', () => {
   thinkMode = !thinkMode;
   THINK_BTN.classList.toggle('active', thinkMode);

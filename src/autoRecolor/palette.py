@@ -197,6 +197,21 @@ class Palette:
         entry._sync_from_oklab(L, a_new, b_new)
         self.modifications.append({"color_id": color_id, "action": "set_chroma", "value": C})
 
+    def set_hue(self, color_id: int, target_hue: float) -> None:
+        """Set the absolute hue angle of a color (0–360°), preserving L and C."""
+        entry = self.get_entry(color_id)
+        if entry is None:
+            raise ValueError(f"Color id {color_id} not found")
+        L = entry.oklab[0]
+        C = entry.chroma
+        if C < 1e-10:
+            C = 0.05  # give achromatic colors a small chroma so hue takes effect
+        h_rad = target_hue * math.pi / 180.0
+        a_new = C * math.cos(h_rad)
+        b_new = C * math.sin(h_rad)
+        entry._sync_from_oklab(L, a_new, b_new)
+        self.modifications.append({"color_id": color_id, "action": "set_hue", "value": target_hue})
+
     def match_lightness(self, source_id: int, target_id: int) -> None:
         """Copy the lightness (L) of source color onto target, keeping target's hue/chroma."""
         src = self.get_entry(source_id)
