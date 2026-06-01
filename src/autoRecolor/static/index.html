@@ -1346,7 +1346,7 @@ details.think.streaming summary {
           <textarea id="caChatInput" placeholder="Describe the colors you want…" disabled rows="1"></textarea>
           <div class="input-foot">
             <div style="display:flex;align-items:center;gap:8px">
-              <button class="think-toggle active" id="caThinkBtn" title="Reasoning ON — slower but more accurate">
+              <button class="think-toggle" id="caThinkBtn" title="Reasoning OFF — click to enable">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M8 2a5 5 0 014 8l-.4.4V13a1 1 0 01-1 1H5.4a1 1 0 01-1-1v-2.6L4 10A5 5 0 018 2z"/>
                   <line x1="6" y1="12.5" x2="10" y2="12.5"/>
@@ -1401,7 +1401,7 @@ const CA_CHIP_ROW   = document.getElementById('caChipRow');
 const TOAST         = document.getElementById('toast');
 
 let modelList = [];
-let thinkMode = true;
+let thinkMode = false;
 
 async function loadModels() {
   try {
@@ -1426,8 +1426,7 @@ async function loadModels() {
 
 loadModels();
 
-THINK_BTN.classList.add('active');
-THINK_BTN.title = 'Reasoning ON — slower but more accurate';
+THINK_BTN.title = 'Reasoning OFF — click to enable';
 THINK_BTN.addEventListener('click', () => {
   thinkMode = !thinkMode;
   THINK_BTN.classList.toggle('active', thinkMode);
@@ -1553,9 +1552,6 @@ PREVIEW_AREA.addEventListener('click', e => {
 });
 FILE_INPUT.addEventListener('change', uploadImage);
 SEND_REAL.addEventListener('click', sendPrompt);
-TEXTAREA.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
-});
 
 // ── compare (slider drag-to-wipe) ──────────────────────────
 COMPARE_BTN.addEventListener('click', () => {
@@ -1615,7 +1611,11 @@ async function loadDefault() {
     // No default — show normal empty state
     PLACEHOLDER.querySelector('strong').textContent = 'No image loaded';
     PLACEHOLDER.querySelector('span').textContent = 'Click or drop an image to get started';
-  } finally { setBusy(false); }
+  } finally {
+    setBusy(false);
+    // Start CA background analysis after AR is ready
+    setTimeout(caConnectCallbacks, 200);
+  }
 }
 loadDefault();
 
@@ -2141,7 +2141,7 @@ let caCurrentUrl    = null;
 let caSliderActive  = false;
 let caHistory       = [];
 let caHistoryIdx    = -1;
-let caThinkMode     = true;
+let caThinkMode     = false;
 let caSid           = null;
 
 async function caResizeAndStartSession(dataUrl) {
@@ -2430,8 +2430,6 @@ function caConnectCallbacks() {
 let caBusy = false;
 let caActiveSrc = null;
 
-caConnectCallbacks();
-
 // Reasoning toggle
 CA_THINK_BTN.addEventListener('click', () => {
   caThinkMode = !caThinkMode;
@@ -2568,9 +2566,6 @@ function caSendPrompt() {
 }
 
 CA_SEND_BTN.addEventListener('click', caSendPrompt);
-CA_CHAT_INPUT.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); caSendPrompt(); }
-});
 CA_CHAT_INPUT.addEventListener('input', () => {
   CA_CHAT_INPUT.style.height = 'auto';
   CA_CHAT_INPUT.style.height = Math.min(CA_CHAT_INPUT.scrollHeight, 160) + 'px';

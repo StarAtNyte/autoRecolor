@@ -230,17 +230,10 @@ async def _agent_loop(session: dict, prompt: str, think: bool = True, model: str
     img = session["img"]
     label_map = session["label_map"]
 
-    # Inject image into first user turn so the model can see the actual image
+    # Inject image into first user turn — stored in Ollama canonical form,
+    # _normalize_messages converts to the right format per provider at call time.
     if not session.get("image_injected") and session.get("image_b64"):
-        b64 = session["image_b64"]
-        meta = _MODEL_MAP.get(model, MODEL_LIST[0])
-        if meta["provider"] == "ollama":
-            messages.append({"role": "user", "content": prompt, "images": [b64]})
-        else:
-            messages.append({"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-            ]})
+        messages.append({"role": "user", "content": prompt, "images": [session["image_b64"]]})
         session["image_injected"] = True
     else:
         messages.append({"role": "user", "content": prompt})
@@ -345,6 +338,38 @@ def _acc_tool_call(acc: dict[int, dict], tc: dict) -> None:
             entry["function"]["arguments"] += json.dumps(raw) if isinstance(raw, dict) else raw
 
 
+def _normalize_messages(messages: list[dict], provider: str) -> list[dict]:
+    """
+    Messages are stored in Ollama canonical form: content is always a string,
+    images (if any) live in a separate 'images' list.
+    Convert to the format each provider actually expects before sending.
+    """
+    result = []
+    for msg in messages:
+        images = msg.get("images")
+        content = msg.get("content", "")
+        if images and provider != "ollama":
+            # Ollama format → OpenAI content-array format
+            new_msg = {k: v for k, v in msg.items() if k not in ("images", "content")}
+            new_msg["content"] = [
+                {"type": "text", "text": content},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{images[0]}"}},
+            ]
+            result.append(new_msg)
+        elif isinstance(content, list) and provider == "ollama":
+            # OpenAI content-array → Ollama format (safety fallback)
+            new_msg = {k: v for k, v in msg.items() if k != "content"}
+            text_parts = [p.get("text", "") for p in content if p.get("type") == "text"]
+            img_parts  = [p["image_url"]["url"] for p in content if p.get("type") == "image_url"]
+            new_msg["content"] = " ".join(text_parts)
+            if img_parts:
+                new_msg["images"] = [u.split(",", 1)[-1] for u in img_parts]
+            result.append(new_msg)
+        else:
+            result.append(msg)
+    return result
+
+
 async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen3.6:27b", tools=None):
     """
     Async generator.
@@ -355,6 +380,7 @@ async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen
     active_tools = TOOLS if tools is None else tools
     meta = _MODEL_MAP.get(model, MODEL_LIST[0])
     provider = meta["provider"]
+    messages = _normalize_messages(messages, provider)
 
     content = ""
     tool_calls_acc: dict[int, dict] = {}
@@ -575,15 +601,7 @@ async def stream_color_anything(prompt: str, colors: str = "[]", model: str = "q
         messages[0]["content"] = sys_content
 
     if not session["image_injected"] and session.get("image_b64"):
-        b64 = session["image_b64"]
-        meta = _MODEL_MAP.get(model, MODEL_LIST[0])
-        if meta["provider"] == "ollama":
-            messages.append({"role": "user", "content": prompt, "images": [b64]})
-        else:
-            messages.append({"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-            ]})
+        messages.append({"role": "user", "content": prompt, "images": [session["image_b64"]]})
         session["image_injected"] = True
     else:
         messages.append({"role": "user", "content": prompt})
