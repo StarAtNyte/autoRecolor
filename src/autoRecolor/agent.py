@@ -258,6 +258,7 @@ TOOLS = [
 
 SYSTEM_PROMPT = """\
 You are an expert colorist AI. You edit image palettes using perceptual color science tools.
+You can see the image. Use your visual understanding to match user requests like "change the shirt color" or "make the scarf red" to the correct palette entry — look at what objects/regions each palette color covers.
 
 ━━ OKLCH color space ━━
   L  = lightness    (0=black … 1=white)

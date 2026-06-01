@@ -1038,11 +1038,11 @@
           originalMetaBaseText = `${imageRegion.width} × ${imageRegion.height} px (${imageRegion.mode})${label ? ` • ${label}` : ''}`;
           restoreOriginalMetaLabel();
 
-          await detectAndRender(label, true);
           if (window.ColorAnythingCA?.onImageLoaded) {
             const origUrl = originalCanvas.toDataURL('image/png');
             window.ColorAnythingCA.onImageLoaded(origUrl, label, imageRegion.width, imageRegion.height);
           }
+          await detectAndRender(label, true);
           resolve(true);
         } catch (error) {
           currentImageData = null;

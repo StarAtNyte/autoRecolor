@@ -56,6 +56,15 @@ app = FastAPI(title="autoRecolor")
 sessions: dict[str, dict] = {}
 
 
+def _img_to_b64(img: Image.Image, max_px: int = 512) -> str:
+    """Resize image to max_px on longest side and return raw base64 JPEG string."""
+    thumb = img.copy().convert("RGB")
+    thumb.thumbnail((max_px, max_px), Image.LANCZOS)
+    buf = io.BytesIO()
+    thumb.save(buf, format="JPEG", quality=82)
+    return base64.b64encode(buf.getvalue()).decode()
+
+
 def _make_preview(img: Image.Image, original: Palette, modified: Palette, label_map: np.ndarray) -> str:
     buf = io.BytesIO()
     recolor_image(img, original, modified, label_map).save(buf, format="PNG")
@@ -97,6 +106,8 @@ async def upload(file: UploadFile = File(...)):
         "original_palette": original,
         "palette": palette,
         "label_map": label_map,
+        "image_b64": _img_to_b64(img),
+        "image_injected": False,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT.format(palette_json=palette.to_json())},
         ],
@@ -140,6 +151,8 @@ async def load_default():
         "original_palette": original,
         "palette": palette,
         "label_map": label_map,
+        "image_b64": _img_to_b64(img),
+        "image_injected": False,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT.format(palette_json=palette.to_json())},
         ],
@@ -217,7 +230,20 @@ async def _agent_loop(session: dict, prompt: str, think: bool = True, model: str
     img = session["img"]
     label_map = session["label_map"]
 
-    messages.append({"role": "user", "content": prompt})
+    # Inject image into first user turn so the model can see the actual image
+    if not session.get("image_injected") and session.get("image_b64"):
+        b64 = session["image_b64"]
+        meta = _MODEL_MAP.get(model, MODEL_LIST[0])
+        if meta["provider"] == "ollama":
+            messages.append({"role": "user", "content": prompt, "images": [b64]})
+        else:
+            messages.append({"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            ]})
+        session["image_injected"] = True
+    else:
+        messages.append({"role": "user", "content": prompt})
 
     max_turns = 15
     for turn in range(max_turns):
@@ -494,37 +520,53 @@ async def _sse_error(msg: str) -> AsyncGenerator[str]:
 
 CA_SYSTEM_PROMPT = """\
 You are a color editing assistant for a K-means image recoloring tool.
-The image has been reduced to representative colors listed below (hex values, index 0-based).
-When the user describes a color change, respond with a brief explanation followed by a JSON block EXACTLY like this:
+You can see the image. Use your visual understanding to identify which representative color corresponds to which object (e.g. clothing, background, skin, hair).
 
+The image has been reduced to representative colors: {colors_json}
+
+IMPORTANT — only output a JSON block when the user is explicitly requesting a color change.
+- If the user asks a question ("what does the image show?", "what colors are there?", "which color is the shirt?") → answer conversationally. NO JSON block.
+- If the user requests a change ("make the shirt red", "change the background to blue") → give a brief explanation then output the JSON block below.
+
+When a color change IS requested, output EXACTLY:
 ```json
 {{"colors": ["#RRGGBB", "#RRGGBB", ...]}}
 ```
-
-Rules:
-- Output the SAME number of colors as provided, in the SAME order.
-- Only modify colors that match what the user asked about; leave others unchanged.
-- Use valid hex strings (e.g. #FF6B35, not "red").
-- The JSON block must be fenced with ```json ... ``` so the UI can extract it reliably.
-
-Current representative colors: {colors_json}
+Rules for the JSON:
+- Same number of colors as provided, same order.
+- Only modify colors the user asked to change; leave all others unchanged.
+- Valid hex strings only (e.g. #FF6B35, not "red").
 """
 
-CA_SESSIONS: dict[str, list[dict]] = {}
+CA_SESSIONS: dict[str, dict] = {}
+
+
+@app.post("/ca-start-session")
+async def ca_start_session(image_b64: str = Form(...)):
+    """Create a CA session storing a resized thumbnail for vision injection."""
+    sid = uuid.uuid4().hex
+    try:
+        img_bytes = base64.b64decode(image_b64)
+        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        b64_small = _img_to_b64(img)
+    except Exception:
+        b64_small = None
+    CA_SESSIONS[sid] = {"messages": [], "image_b64": b64_small, "image_injected": False}
+    return {"ca_sid": sid}
 
 
 @app.get("/stream-color-anything")
-async def stream_color_anything(prompt: str, colors: str = "[]", model: str = "qwen3.6:27b", think: bool = False):
+async def stream_color_anything(prompt: str, colors: str = "[]", model: str = "qwen3.6:27b", think: bool = False, ca_sid: str = ""):
     try:
         color_list = json.loads(colors)
     except Exception:
         color_list = []
 
-    sid = f"ca_{hash(prompt + colors)}"
-    if sid not in CA_SESSIONS:
-        CA_SESSIONS[sid] = []
+    session = CA_SESSIONS.get(ca_sid) if ca_sid else None
+    if session is None:
+        session = {"messages": [], "image_b64": None, "image_injected": True}
 
-    messages = CA_SESSIONS[sid]
+    messages = session["messages"]
     sys_content = CA_SYSTEM_PROMPT.format(colors_json=json.dumps(color_list))
 
     if not messages or messages[0]["role"] != "system":
@@ -532,7 +574,20 @@ async def stream_color_anything(prompt: str, colors: str = "[]", model: str = "q
     else:
         messages[0]["content"] = sys_content
 
-    messages.append({"role": "user", "content": prompt})
+    if not session["image_injected"] and session.get("image_b64"):
+        b64 = session["image_b64"]
+        meta = _MODEL_MAP.get(model, MODEL_LIST[0])
+        if meta["provider"] == "ollama":
+            messages.append({"role": "user", "content": prompt, "images": [b64]})
+        else:
+            messages.append({"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            ]})
+        session["image_injected"] = True
+    else:
+        messages.append({"role": "user", "content": prompt})
+
     if len(messages) > 40:
         messages[1:] = messages[-38:]
 
