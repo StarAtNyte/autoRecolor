@@ -110,6 +110,16 @@ async def upload(file: UploadFile = File(...)):
     }
 
 
+@app.get("/ca-default-image-url")
+async def ca_default_image_url():
+    """Return the URL of the default Color Anything sample image."""
+    path = ASSETS / "samples" / "ca_default.jpg"
+    if not path.exists():
+        from fastapi import HTTPException
+        raise HTTPException(404, "CA default image not found")
+    return {"url": "/assets/samples/ca_default.jpg", "filename": "ca_default.jpg"}
+
+
 @app.post("/load-default")
 async def load_default():
     default = ASSETS / "samples" / "test_image.png"
@@ -309,12 +319,14 @@ def _acc_tool_call(acc: dict[int, dict], tc: dict) -> None:
             entry["function"]["arguments"] += json.dumps(raw) if isinstance(raw, dict) else raw
 
 
-async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen3.6:27b"):
+async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen3.6:27b", tools=None):
     """
     Async generator.
     Yields: ("thinking", chunk_str)
     Final:  ("done", content, tool_calls)
+    tools defaults to TOOLS (the full agent toolset); pass [] to call without tools.
     """
+    active_tools = TOOLS if tools is None else tools
     meta = _MODEL_MAP.get(model, MODEL_LIST[0])
     provider = meta["provider"]
 
@@ -325,11 +337,12 @@ async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen
         payload = {
             "model": model,
             "messages": messages,
-            "tools": TOOLS,
             "stream": True,
             "think": think,
             "options": {"temperature": 0.3, "num_ctx": 8192},
         }
+        if active_tools:
+            payload["tools"] = active_tools
         async with httpx.AsyncClient(timeout=300) as client:
             async with client.stream("POST", f"{OLLAMA_BASE}/api/chat", json=payload) as resp:
                 if not resp.is_success:
@@ -368,9 +381,11 @@ async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen
         if provider == "google":
             # Google streaming doesn't return tool calls — use non-streaming
             # thinking_budget: 0 = off, -1 = dynamic (default on for 2.5 Flash)
-            payload = {"model": model, "messages": messages, "tools": TOOLS,
+            payload = {"model": model, "messages": messages,
                        "temperature": 0.3, "max_tokens": 4096,
                        "reasoning_effort": "high" if think else "none"}
+            if active_tools:
+                payload["tools"] = active_tools
             async with httpx.AsyncClient(timeout=300) as client:
                 resp = await client.post(base_url, json=payload, headers=headers)
                 if not resp.is_success:
@@ -386,11 +401,12 @@ async def _call_llm(messages: list[dict], think: bool = True, model: str = "qwen
         payload = {
             "model": model,
             "messages": messages,
-            "tools": TOOLS,
             "stream": True,
             "temperature": 0.3,
             "max_tokens": 2048 if provider == "openrouter" else 4096,
         }
+        if active_tools:
+            payload["tools"] = active_tools
 
         async with httpx.AsyncClient(timeout=300) as client:
             async with client.stream("POST", base_url, json=payload, headers=headers) as resp:
@@ -474,6 +490,85 @@ def _sync_prompt(messages: list[dict], palette: Palette) -> None:
 
 async def _sse_error(msg: str) -> AsyncGenerator[str]:
     yield f"event: error\ndata: {json.dumps({'error': msg})}\n\n"
+
+
+CA_SYSTEM_PROMPT = """\
+You are a color editing assistant for a K-means image recoloring tool.
+The image has been reduced to representative colors listed below (hex values, index 0-based).
+When the user describes a color change, respond with a brief explanation followed by a JSON block EXACTLY like this:
+
+```json
+{{"colors": ["#RRGGBB", "#RRGGBB", ...]}}
+```
+
+Rules:
+- Output the SAME number of colors as provided, in the SAME order.
+- Only modify colors that match what the user asked about; leave others unchanged.
+- Use valid hex strings (e.g. #FF6B35, not "red").
+- The JSON block must be fenced with ```json ... ``` so the UI can extract it reliably.
+
+Current representative colors: {colors_json}
+"""
+
+CA_SESSIONS: dict[str, list[dict]] = {}
+
+
+@app.get("/stream-color-anything")
+async def stream_color_anything(prompt: str, colors: str = "[]", model: str = "qwen3.6:27b", think: bool = False):
+    try:
+        color_list = json.loads(colors)
+    except Exception:
+        color_list = []
+
+    sid = f"ca_{hash(prompt + colors)}"
+    if sid not in CA_SESSIONS:
+        CA_SESSIONS[sid] = []
+
+    messages = CA_SESSIONS[sid]
+    sys_content = CA_SYSTEM_PROMPT.format(colors_json=json.dumps(color_list))
+
+    if not messages or messages[0]["role"] != "system":
+        messages.insert(0, {"role": "system", "content": sys_content})
+    else:
+        messages[0]["content"] = sys_content
+
+    messages.append({"role": "user", "content": prompt})
+    if len(messages) > 40:
+        messages[1:] = messages[-38:]
+
+    return StreamingResponse(
+        _ca_stream(messages, model=model, think=think),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _ca_stream(messages: list[dict], model: str = "qwen3.6:27b", think: bool = False):
+    full_content = ""
+    try:
+        async for event, *payload in _call_llm(messages, think=think, model=model, tools=[]):
+            if event == "thinking":
+                yield f"event: thinking\ndata: {json.dumps({'chunk': payload[0]})}\n\n"
+            elif event == "done":
+                full_content, _ = payload
+    except Exception as exc:
+        yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+        return
+
+    messages.append({"role": "assistant", "content": full_content})
+    yield f"event: message\ndata: {json.dumps({'text': full_content})}\n\n"
+
+    import re
+    m = re.search(r'```json\s*(\{.*?"colors"\s*:\s*\[.*?\].*?\})\s*```', full_content, re.DOTALL)
+    if m:
+        try:
+            data = json.loads(m.group(1))
+            if isinstance(data.get("colors"), list):
+                yield f"event: color_update\ndata: {json.dumps({'colors': data['colors']})}\n\n"
+        except Exception:
+            pass
+
+    yield "event: done\ndata: {}\n\n"
 
 
 @app.get("/model-status")

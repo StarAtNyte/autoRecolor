@@ -804,6 +804,158 @@ details.think.streaming summary {
 #promptInput, #sendBtn { display: none; }
 
 /* ════════════════════════════════
+   TAB SWITCHER
+════════════════════════════════ */
+.tab-switcher {
+  display: flex; gap: 2px; background: var(--s2);
+  border: 1px solid var(--border2); border-radius: 9px; padding: 2px;
+}
+.tab-btn {
+  height: 26px; padding: 0 13px; border-radius: 7px; border: none;
+  background: transparent; color: var(--text-mid); font-size: 12px;
+  font-family: inherit; font-weight: 500; cursor: pointer; white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.tab-btn:hover { color: var(--text); }
+.tab-btn.active { background: var(--s3); color: var(--text); }
+
+/* ════════════════════════════════
+   COLOR ANYTHING PANE
+════════════════════════════════ */
+#caPane {
+  display: none; flex: 1; overflow: hidden;
+}
+#caPane.active { display: flex; }
+
+/* swatches row inside palette-cards */
+.ca-swatches-row {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  padding: 4px 0 6px; min-height: 52px;
+}
+
+.ca-swatch-wrap { position: relative; flex-shrink: 0; }
+
+.ca-swatch {
+  width: 38px; height: 38px; border-radius: 10px; cursor: pointer;
+  border: 1px solid var(--border2); display: block;
+  box-shadow: 0 2px 8px var(--shadow);
+  transition: transform .18s ease, border-color .18s ease;
+}
+.ca-swatch:hover { transform: translateY(-2px) scale(1.06); border-color: var(--accent); }
+.ca-swatch.fixed { cursor: default; opacity: .7; }
+.ca-swatch.fixed:hover { transform: none; border-color: var(--border2); }
+.ca-swatch.active { border-color: var(--accent); box-shadow: 0 2px 8px var(--shadow), 0 0 0 2px var(--accent-glow); }
+
+.ca-swatch-remove {
+  position: absolute; top: -5px; right: -5px;
+  width: 16px; height: 16px; background: rgba(168,73,73,.96);
+  border-radius: 50%; border: none; color: white; font-size: 9px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  z-index: 1; transition: background .15s;
+}
+.ca-swatch-remove:hover { background: #e05c5c; }
+
+/* lch editor */
+.ca-lch-editor[hidden] { display: none !important; }
+.ca-lch-editor {
+  padding: 10px 0 0; border-top: 1px solid var(--border);
+  margin-top: 8px; display: grid; gap: 10px;
+}
+.ca-lch-editor-head {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+.ca-lch-editor-title { font-size: .72rem; color: var(--text-mid); letter-spacing: .14em; text-transform: uppercase; font-weight: 600; }
+.ca-lch-editor-subtitle { margin-top: 2px; font-size: .74rem; color: var(--text-dim); }
+.ca-lch-editor-close {
+  width: 24px; height: 24px; border: 1px solid var(--border2);
+  border-radius: 999px; background: var(--s2); color: var(--text-mid);
+  cursor: pointer; transition: border-color .15s, color .15s; font-size: 13px;
+  display: flex; align-items: center; justify-content: center;
+}
+.ca-lch-editor-close:hover { border-color: var(--accent); color: var(--text); }
+
+.ca-lch-editor-body {
+  display: grid; grid-template-columns: 48px 1fr; align-items: start; gap: 10px;
+}
+.ca-lch-preview { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--border2); }
+.ca-lch-controls { min-width: 0; display: grid; gap: 8px; }
+.ca-lch-locks { display: flex; gap: 8px; flex-wrap: wrap; font-size: .7rem; color: var(--text-dim); }
+.ca-lch-locks strong { margin-left: 2px; color: var(--text-mid); font-weight: 600; }
+
+.ca-lch-plane-wrap { display: grid; gap: 5px; }
+.ca-lch-plane-head, .ca-lch-plane-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+}
+.ca-lch-plane-title { font-size: .7rem; color: var(--text-mid); letter-spacing: .08em; text-transform: uppercase; }
+.ca-lch-plane-axis { font-size: .7rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+.ca-lch-plane-frame {
+  position: relative; width: 100%; max-width: 260px; aspect-ratio: 1.4;
+  border-radius: 10px; overflow: hidden; border: 1px solid var(--border2);
+}
+.ca-lch-plane { width: 100%; height: 100%; display: block; cursor: crosshair; }
+.ca-lch-plane-marker {
+  position: absolute; width: 14px; height: 14px;
+  margin-left: -7px; margin-top: -7px;
+  border-radius: 999px; border: 2px solid var(--text);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.55); pointer-events: none;
+}
+
+.ca-lch-hue-row {
+  display: grid; grid-template-columns: 40px 1fr 48px; align-items: center; gap: 8px;
+}
+.ca-lch-slider-label { font-size: .78rem; color: var(--text-mid); }
+.ca-lch-hue-slider {
+  width: 100%; height: 16px; appearance: none; -webkit-appearance: none;
+  border-radius: 999px; background: transparent; cursor: pointer;
+}
+.ca-lch-hue-slider::-webkit-slider-runnable-track {
+  height: 10px; border-radius: 999px; border: 1px solid var(--border2);
+  background: linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00);
+}
+.ca-lch-hue-slider::-webkit-slider-thumb {
+  width: 16px; height: 16px; margin-top: -4px;
+  border: 2px solid var(--text); border-radius: 999px;
+  background: var(--accent-deep); appearance: none; -webkit-appearance: none;
+}
+.ca-lch-value { font-size: .78rem; color: var(--accent2); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* CA controls (merge/interpolation/overlay) inside palette-cards */
+.ca-controls-section {
+  padding-top: 8px; border-top: 1px solid var(--border); margin-top: 6px;
+  display: grid; gap: 6px;
+}
+.ca-ctrl-row {
+  display: flex; gap: 8px; align-items: center;
+}
+.ca-ctrl-label { font-size: 10.5px; color: var(--text-dim); white-space: nowrap; flex-shrink: 0; }
+.ca-ctrl-row input[type=range] { flex: 1; accent-color: var(--accent); cursor: pointer; min-width: 60px; }
+.ca-ctrl-val { font-size: 10.5px; color: var(--accent2); min-width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* toggle switch (reused for CA controls) */
+.ca-tog { position: relative; width: 32px; height: 18px; flex-shrink: 0; }
+.ca-tog input { opacity: 0; width: 0; height: 0; }
+.ca-tog-track {
+  position: absolute; inset: 0; background: var(--s3);
+  border-radius: 18px; cursor: pointer; transition: background .2s;
+}
+.ca-tog input:checked + .ca-tog-track { background: var(--accent-deep); }
+.ca-tog-track::after {
+  content: ''; position: absolute; width: 12px; height: 12px;
+  left: 3px; top: 3px; background: white; border-radius: 50%; transition: transform .2s;
+}
+.ca-tog input:checked + .ca-tog-track::after { transform: translateX(14px); }
+
+/* chat color-update chips row */
+.ca-color-update-row {
+  padding: 2px 0 4px 36px; display: flex; flex-wrap: wrap; gap: 5px;
+}
+.ca-color-chip {
+  width: 24px; height: 24px; border-radius: 6px;
+  border: 1px solid var(--border2); box-shadow: 0 1px 4px var(--shadow); flex-shrink: 0;
+}
+
+/* ════════════════════════════════
    RESPONSIVE
 ════════════════════════════════ */
 @media (max-width: 740px) {
@@ -848,6 +1000,10 @@ details.think.streaming summary {
       <line x1="19.5" y1="3" x2="19.5" y2="29" stroke="#ffffff" stroke-width="1" stroke-opacity="0.18" stroke-dasharray="2 2"/>
     </svg>
     <span class="brand-name"><span class="auto">auto</span><span class="recolor">Recolor</span></span>
+  </div>
+  <div class="tab-switcher">
+    <button class="tab-btn active" id="tabRecolor">Auto Recolor</button>
+    <button class="tab-btn" id="tabColorAnything">Color Anything</button>
   </div>
   <div class="topbar-actions">
     <!-- model status -->
@@ -994,6 +1150,149 @@ details.think.streaming summary {
 
 </div><!-- .panels -->
 
+<!-- Color Anything pane — mirrors Auto Recolor layout -->
+<div id="caPane">
+  <!-- hidden processing canvases (off-screen) -->
+  <canvas id="caOriginalCanvas" width="1" height="1" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;top:-1px"></canvas>
+  <canvas id="caResultCanvas"   width="1" height="1" style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;top:-1px"></canvas>
+  <div id="caMagnifier" style="position:fixed;pointer-events:none;z-index:200;display:none;flex-direction:column;align-items:center;gap:5px">
+    <div style="width:140px;height:140px;border-radius:50%;overflow:hidden;border:2px solid rgba(207,154,96,.36)">
+      <canvas id="caMagnifierCanvas" width="140" height="140" style="display:block"></canvas>
+    </div>
+    <div id="caMagnifierColor" style="font-size:.72rem;font-family:monospace;color:#f4ede5;background:rgba(10,9,8,.82);border-radius:999px;padding:3px 10px">#000000</div>
+  </div>
+  <input type="file" id="caFileInput" accept="image/*" style="display:none">
+
+  <div class="panels">
+
+    <!-- sidebar -->
+    <div class="sidebar">
+
+      <!-- preview area -->
+      <div class="preview-area" id="caPreviewArea" title="Click or drop an image">
+        <div class="drop-ring" id="caDropRing">Drop image here</div>
+        <div class="placeholder" id="caPlaceholder">
+          <div class="placeholder-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px">
+              <rect x="3" y="4" width="18" height="16" rx="2"/>
+              <circle cx="8.5" cy="9.5" r="1.5"/>
+              <path d="M3 16l4-4 4 3 5-5 5 5"/>
+            </svg>
+          </div>
+          <strong id="caPlaceholderTitle">Loading sample…</strong>
+          <span id="caPlaceholderSub">Drop or upload a new image anytime</span>
+        </div>
+        <img id="caPreviewImg" style="display:none" alt="Result">
+        <!-- compare overlay -->
+        <div class="compare-clip" id="caCompareClip"><img id="caCompareClipImg" alt="Original"></div>
+        <div class="compare-handle" id="caCompareHandle" style="left:50%"></div>
+        <div class="compare-label" id="caCompareLabel">ORIGINAL</div>
+        <!-- canvas meta pill -->
+        <div class="canvas-meta" id="caCanvasMeta">
+          <span class="dot"></span>
+          <span id="caCanvasMetaDims">—</span>
+          <span style="color:rgba(255,255,255,.4)">·</span>
+          <span id="caCanvasMetaColors">— colors</span>
+        </div>
+        <button class="preview-dl-btn" id="caPreviewDlBtn" title="Download result">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
+          </svg>
+        </button>
+        <button class="preview-new-btn" id="caPreviewNewBtn" title="Upload new image">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 10V3M5 6l3-3 3 3"/><rect x="2" y="11" width="12" height="3" rx="1"/>
+          </svg>
+          New image
+        </button>
+      </div>
+
+      <!-- palette strip -->
+      <div class="palette-strip" id="caPaletteStripBar" style="display:none">
+        <img id="caPaletteImg" alt="Palette">
+      </div>
+
+      <!-- palette header -->
+      <div class="palette-header" id="caPaletteHeader" style="display:none">
+        <span class="palette-header-lbl">Palette</span>
+        <div class="harmony-badge">
+          <span id="caColorsCount" style="font-size:10.5px;color:var(--text-dim)">—</span>
+        </div>
+      </div>
+
+      <!-- palette cards -->
+      <div class="palette-cards" id="caSwatchesPanel" style="display:none"></div>
+
+      <!-- hidden stubs — JS expects these IDs in the DOM -->
+      <div style="display:none">
+        <div id="caSwatches"></div>
+        <div id="caRepHint"></div>
+        <div id="caLchEditor"></div>
+        <div id="caLchPreview"></div>
+        <canvas id="caLchPlane"></canvas>
+        <div id="caLchPlaneMarker"></div>
+        <span id="caLchPlaneLightnessRange"></span>
+        <span id="caLchPlaneChromaRange"></span>
+        <span id="caLchLightnessValue"></span>
+        <span id="caLchChromaValue"></span>
+        <input id="caLchHueSlider" type="range">
+        <output id="caLchHueValue"></output>
+        <strong id="caLchLightness"></strong>
+        <strong id="caLchChroma"></strong>
+        <button id="caLchClose"></button>
+        <input type="checkbox" id="caMergeToggle" checked>
+        <input type="range" id="caMergeSlider" min="0" max="5" step="0.01" value="0.5">
+        <span id="caMergeValue"></span>
+        <input type="range" id="caInterpolationSlider" min="1" max="20" step="1" value="5">
+        <span id="caInterpolationValue"></span>
+        <input type="checkbox" id="caOverlayToggle">
+      </div>
+
+      <!-- history strip -->
+      <div class="history-strip" id="caHistoryStrip" style="display:none">
+        <button class="hist-arrow" id="caHistPrev" disabled title="Previous">◀</button>
+        <div class="history-scroll" id="caHistoryScroll"></div>
+        <button class="hist-arrow" id="caHistNext" disabled title="Next">▶</button>
+      </div>
+    </div>
+
+    <!-- main: chat (same as Auto Recolor) -->
+    <div class="main">
+      <div class="messages-wrap">
+        <div class="messages" id="caChatMessages"></div>
+      </div>
+      <div class="status-bar" id="caStatusBar"></div>
+      <div class="input-area">
+        <div class="input-box">
+          <textarea id="caChatInput" placeholder="Describe the colors you want…" disabled rows="1"></textarea>
+          <div class="input-foot">
+            <div style="display:flex;align-items:center;gap:8px">
+              <button class="think-toggle active" id="caThinkBtn" title="Reasoning ON — slower but more accurate">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M8 2a5 5 0 014 8l-.4.4V13a1 1 0 01-1 1H5.4a1 1 0 01-1-1v-2.6L4 10A5 5 0 018 2z"/>
+                  <line x1="6" y1="12.5" x2="10" y2="12.5"/>
+                </svg>
+                Reasoning
+              </button>
+              <select class="model-select" id="caModelSelect"></select>
+            </div>
+            <button class="send-btn" id="caSendBtn" disabled title="Send (Enter)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 19V5M5 12l7-7 7 7"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <p class="hint" id="caHint">Upload an image to begin</p>
+      </div>
+    </div>
+
+  </div>
+</div><!-- #caPane -->
+
+<script src="/static/color-quantizer.js"></script>
+<script src="/static/kmeans-representatives-ca.js"></script>
+
 <script>
 // ── refs ──────────────────────────────────────────────────
 const FILE_INPUT    = document.getElementById('fileInput');
@@ -1016,7 +1315,8 @@ const THEME_BTN     = document.getElementById('themeBtn');
 const COMPARE_BTN   = document.getElementById('compareBtn');
 const DOWNLOAD_BTN  = document.getElementById('downloadBtn');
 const THINK_BTN     = document.getElementById('thinkBtn');
-const MODEL_SELECT = document.getElementById('modelSelect');
+const MODEL_SELECT    = document.getElementById('modelSelect');
+const CA_MODEL_SELECT = document.getElementById('caModelSelect');
 
 let modelList = [];
 let thinkMode = true;
@@ -1027,14 +1327,18 @@ async function loadModels() {
     const data = await res.json();
     modelList = data.models;
     const providerTag = { ollama: '· local', nim: '· NIM', openrouter: '· OpenRouter', google: '· Google' };
-    MODEL_SELECT.innerHTML = modelList.map(m =>
+    const optHtml = modelList.map(m =>
       `<option value="${m.id}">${m.label} ${providerTag[m.provider] || ''}</option>`
     ).join('');
+    MODEL_SELECT.innerHTML = optHtml;
+    CA_MODEL_SELECT.innerHTML = optHtml;
     // Default to Gemini 2.5 Flash, fallback to local
     const preferred = modelList.find(m => m.id === 'gemini-2.5-flash') || modelList.find(m => m.provider === 'ollama');
-    if (preferred) MODEL_SELECT.value = preferred.id;
+    if (preferred) { MODEL_SELECT.value = preferred.id; CA_MODEL_SELECT.value = preferred.id; }
   } catch (e) {
-    MODEL_SELECT.innerHTML = '<option value="qwen3.6:27b">Qwen 3.6 27B · local</option>';
+    const fallback = '<option value="qwen3.6:27b">Qwen 3.6 27B · local</option>';
+    MODEL_SELECT.innerHTML = fallback;
+    CA_MODEL_SELECT.innerHTML = fallback;
   }
 }
 
@@ -1493,7 +1797,7 @@ function updatePaletteOnly(palette) {
         <div class="cc-bars">
           <div class="cc-bar-group">
             <span class="cc-bar-lbl">L</span>
-            <div class="cc-bar"><div class="cc-bar-fill" style="width:${Lpct}%;background:linear-gradient(90deg,${c.hex}99,${c.hex})"></div></div>
+            <div class="cc-bar"><div class="cc-bar-fill" style="width:${Lpct}%;background:linear-gradient(90deg,rgba(${parseInt(c.hex.slice(1,3),16)},${parseInt(c.hex.slice(3,5),16)},${parseInt(c.hex.slice(5,7),16)},0.5),${c.hex})"></div></div>
             <span class="cc-bar-val">${L.toFixed(2)}</span>
           </div>
           <span class="cc-chroma" title="chroma ${chroma.toFixed(3)}, hue ${hueAngle}°">C ${chroma.toFixed(2)}</span>
@@ -1717,6 +2021,470 @@ async function startPreload() {
 }
 
 startPreload();
+
+// ════════════════════════════════
+// TAB SWITCHER
+// ════════════════════════════════
+const TAB_RECOLOR        = document.getElementById('tabRecolor');
+const TAB_COLOR_ANYTHING = document.getElementById('tabColorAnything');
+const PANELS_DIV         = document.querySelector('.panels');
+const CA_PANE            = document.getElementById('caPane');
+
+function switchTab(tab) {
+  if (tab === 'colorAnything') {
+    TAB_RECOLOR.classList.remove('active');
+    TAB_COLOR_ANYTHING.classList.add('active');
+    PANELS_DIV.style.display = 'none';
+    CA_PANE.classList.add('active');
+  } else {
+    TAB_COLOR_ANYTHING.classList.remove('active');
+    TAB_RECOLOR.classList.add('active');
+    PANELS_DIV.style.display = '';
+    CA_PANE.classList.remove('active');
+  }
+}
+
+TAB_RECOLOR.addEventListener('click', () => switchTab('recolor'));
+TAB_COLOR_ANYTHING.addEventListener('click', () => switchTab('colorAnything'));
+
+// ════════════════════════════════
+// COLOR ANYTHING — IMAGE UPLOAD + SIDEBAR
+// ════════════════════════════════
+const CA_FILE_INPUT     = document.getElementById('caFileInput');
+const CA_PREVIEW_IMG    = document.getElementById('caPreviewImg');
+const CA_PLACEHOLDER    = document.getElementById('caPlaceholder');
+const CA_PREVIEW_AREA   = document.getElementById('caPreviewArea');
+const CA_PREVIEW_NEW    = document.getElementById('caPreviewNewBtn');
+const CA_PREVIEW_DL     = document.getElementById('caPreviewDlBtn');
+const CA_PALETTE_BAR    = document.getElementById('caPaletteStripBar');
+const CA_PALETTE_IMG    = document.getElementById('caPaletteImg');
+const CA_PALETTE_HDR    = document.getElementById('caPaletteHeader');
+const CA_SWATCHES_PANEL = document.getElementById('caSwatchesPanel');
+const CA_HISTORY_STRIP  = document.getElementById('caHistoryStrip');
+const CA_HISTORY_SCROLL = document.getElementById('caHistoryScroll');
+const CA_HIST_PREV      = document.getElementById('caHistPrev');
+const CA_HIST_NEXT      = document.getElementById('caHistNext');
+const CA_CANVAS_META    = document.getElementById('caCanvasMeta');
+const CA_META_DIMS      = document.getElementById('caCanvasMetaDims');
+const CA_META_COLORS    = document.getElementById('caCanvasMetaColors');
+const CA_COMPARE_CLIP   = document.getElementById('caCompareClip');
+const CA_COMPARE_IMG    = document.getElementById('caCompareClipImg');
+const CA_COMPARE_HANDLE = document.getElementById('caCompareHandle');
+const CA_COMPARE_LABEL  = document.getElementById('caCompareLabel');
+const CA_CHAT_INPUT     = document.getElementById('caChatInput');
+const CA_SEND_BTN       = document.getElementById('caSendBtn');
+const CA_MESSAGES       = document.getElementById('caChatMessages');
+const CA_STATUS         = document.getElementById('caStatusBar');
+const CA_HINT           = document.getElementById('caHint');
+const CA_THINK_BTN      = document.getElementById('caThinkBtn');
+
+let caOriginalUrl   = null;
+let caCurrentUrl    = null;
+let caSliderActive  = false;
+let caHistory       = [];
+let caHistoryIdx    = -1;
+let caThinkMode     = true;
+
+// Palette strip: render representative colors as an img
+function caRenderPaletteStrip(hexColors) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 480; canvas.height = 36;
+  const ctx = canvas.getContext('2d');
+  const n = hexColors.length;
+  if (n === 0) { CA_PALETTE_BAR.style.display = 'none'; return; }
+  hexColors.forEach((hex, i) => {
+    ctx.fillStyle = hex;
+    ctx.fillRect(Math.round(i * 480 / n), 0, Math.ceil(480 / n), 36);
+  });
+  CA_PALETTE_IMG.src = canvas.toDataURL();
+  CA_PALETTE_BAR.style.display = '';
+}
+
+// History
+function caPushHistory(url, hexColors, usageEntries, label) {
+  caHistory = caHistory.slice(0, caHistoryIdx + 1);
+  caHistory.push({ url, hexColors, usageEntries, label });
+  caHistoryIdx = caHistory.length - 1;
+  caRenderHistoryStrip();
+}
+
+function caRenderHistoryStrip() {
+  if (caHistory.length <= 1) { CA_HISTORY_STRIP.style.display = 'none'; return; }
+  CA_HISTORY_STRIP.style.display = 'flex';
+  CA_HISTORY_SCROLL.innerHTML = '';
+  caHistory.forEach((entry, i) => {
+    const thumb = document.createElement('div');
+    thumb.className = 'hist-thumb' + (i === caHistoryIdx ? ' active' : '');
+    thumb.title = entry.label;
+    thumb.innerHTML = `<img src="${entry.url}" alt="v${i+1}"><div class="hist-label">${entry.label}</div>
+      <button class="hist-dl" title="Download ${entry.label}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2v8M5 7l3 3 3-3"/><path d="M2 12v1a1 1 0 001 1h10a1 1 0 001-1v-1"/>
+        </svg>
+      </button>`;
+    thumb.addEventListener('click', () => caNavigateHistory(i));
+    thumb.querySelector('.hist-dl').addEventListener('click', e => {
+      e.stopPropagation();
+      const a = document.createElement('a'); a.href = entry.url; a.download = `ca-${entry.label}.png`; a.click();
+    });
+    CA_HISTORY_SCROLL.appendChild(thumb);
+  });
+  const active = CA_HISTORY_SCROLL.children[caHistoryIdx];
+  if (active) active.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  CA_HIST_PREV.disabled = caHistoryIdx <= 0;
+  CA_HIST_NEXT.disabled = caHistoryIdx >= caHistory.length - 1;
+}
+
+function caNavigateHistory(idx) {
+  if (idx < 0 || idx >= caHistory.length) return;
+  caHistoryIdx = idx;
+  const entry = caHistory[idx];
+  caSetPreviewImg(entry.url);
+  caRenderPaletteStrip(entry.hexColors);
+  caRenderPaletteCards(entry.usageEntries);
+  caRenderHistoryStrip();
+}
+
+CA_HIST_PREV.addEventListener('click', () => caNavigateHistory(caHistoryIdx - 1));
+CA_HIST_NEXT.addEventListener('click', () => caNavigateHistory(caHistoryIdx + 1));
+
+// Preview img helper
+function caSetPreviewImg(url) {
+  CA_PREVIEW_IMG.classList.add('fading');
+  setTimeout(() => { CA_PREVIEW_IMG.src = url; CA_PREVIEW_IMG.classList.remove('fading'); }, 180);
+}
+
+// Compare (drag-to-wipe)
+function caSetSliderActive(on) {
+  caSliderActive = on;
+  CA_PREVIEW_AREA.classList.toggle('slider-mode', on);
+  if (on) { CA_COMPARE_IMG.src = caOriginalUrl; caSetSliderPct(50); }
+  else { CA_COMPARE_CLIP.style.clipPath = ''; }
+}
+function caSetSliderPct(pct) {
+  pct = Math.max(0, Math.min(100, pct));
+  CA_COMPARE_CLIP.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+  CA_COMPARE_HANDLE.style.left = pct + '%';
+}
+CA_PREVIEW_AREA.addEventListener('pointermove', e => {
+  if (!caSliderActive) return;
+  const r = CA_PREVIEW_AREA.getBoundingClientRect();
+  caSetSliderPct(((e.clientX - r.left) / r.width) * 100);
+});
+
+// Download
+CA_PREVIEW_DL.addEventListener('click', e => {
+  e.stopPropagation();
+  const url = caCurrentUrl || caOriginalUrl;
+  if (!url) return;
+  const a = document.createElement('a'); a.href = url; a.download = 'color-anything.png'; a.click();
+});
+
+// Upload
+CA_PREVIEW_NEW.addEventListener('click', e => { e.stopPropagation(); CA_FILE_INPUT.click(); });
+CA_PREVIEW_AREA.addEventListener('click', e => {
+  const noImage = !CA_PREVIEW_IMG.src || CA_PREVIEW_IMG.style.display === 'none';
+  if (noImage && (e.target === CA_PLACEHOLDER || CA_PLACEHOLDER.contains(e.target) || e.target === CA_PREVIEW_AREA))
+    CA_FILE_INPUT.click();
+});
+
+CA_FILE_INPUT.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  CA_FILE_INPUT.value = '';
+
+  // Show loading state
+  CA_PLACEHOLDER.querySelector('strong').textContent = `Loading ${file.name}…`;
+  caHistory = []; caHistoryIdx = -1; CA_HISTORY_STRIP.style.display = 'none';
+  caSliderActive = false; caSetSliderActive(false);
+  CA_CANVAS_META.classList.remove('show');
+
+  const tryLoad = () => {
+    if (window.ColorAnythingCA) {
+      window.ColorAnythingCA.loadImage(url, file.name);
+    } else {
+      setTimeout(tryLoad, 80);
+    }
+  };
+  tryLoad();
+});
+
+// Drag-and-drop on CA pane
+CA_PANE.addEventListener('dragover', e => { e.preventDefault(); document.body.classList.add('dragging'); });
+CA_PANE.addEventListener('dragleave', () => document.body.classList.remove('dragging'));
+CA_PANE.addEventListener('drop', e => {
+  e.preventDefault(); document.body.classList.remove('dragging');
+  const f = e.dataTransfer?.files[0];
+  if (f && f.type.startsWith('image/')) {
+    const dt = new DataTransfer(); dt.items.add(f);
+    CA_FILE_INPUT.files = dt.files;
+    CA_FILE_INPUT.dispatchEvent(new Event('change'));
+  }
+});
+
+// Callbacks from ColorAnythingCA
+function caOnImageLoaded(originalDataUrl, filename, w, h) {
+  caOriginalUrl = originalDataUrl;
+  caCurrentUrl  = null;
+  CA_PREVIEW_IMG.src = originalDataUrl;
+  CA_PREVIEW_IMG.style.display = 'block';
+  CA_PLACEHOLDER.style.display = 'none';
+  CA_META_DIMS.textContent = `${w} × ${h}`;
+  CA_CANVAS_META.classList.add('show');
+  CA_HINT.textContent = 'What colors do you want?';
+  caSetBusy(false);
+  CA_CHAT_INPUT.disabled = false;
+  CA_SEND_BTN.disabled = false;
+  caAddMsg('system', `Loaded: ${filename} · ${w}×${h}`);
+}
+
+function caRenderPaletteCards(usageEntries) {
+  if (!CA_SWATCHES_PANEL || !Array.isArray(usageEntries)) return;
+  CA_SWATCHES_PANEL.innerHTML = usageEntries.map(entry => {
+    const [r, g, b] = entry.color;
+    const oklab = window.ColorQuantizer?._rgbToOklab(r, g, b) || { l: 0, a: 0, b: 0 };
+    const oklch = window.ColorQuantizer?._oklabToOklch(oklab) || { l: 0, c: 0, h: 0 };
+    const L = oklab.l;
+    const chroma = oklch.c;
+    const Lpct = Math.round(L * 100);
+    const pct = entry.percent != null ? entry.percent.toFixed(1) : '—';
+    const barFrom = `rgba(${r},${g},${b},0.6)`;
+    return `<div class="color-card">
+      <div class="cc-swatch" style="background:${entry.hex};border-color:rgba(255,255,255,${L > 0.6 ? '.15' : '.08'})"></div>
+      <div class="cc-info">
+        <div class="cc-top">
+          <span class="cc-hex">${esc(entry.hex)}</span>
+          <span class="cc-pct">${pct}%</span>
+        </div>
+        <div class="cc-bars">
+          <div class="cc-bar-group">
+            <span class="cc-bar-lbl">L</span>
+            <div class="cc-bar"><div class="cc-bar-fill" style="width:${Lpct}%;background:linear-gradient(90deg,${barFrom},${entry.hex})"></div></div>
+            <span class="cc-bar-val">${L.toFixed(2)}</span>
+          </div>
+          <span class="cc-chroma" title="chroma ${chroma.toFixed(3)}">C ${chroma.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  const count = usageEntries.length;
+  const countEl = document.getElementById('caColorsCount');
+  if (countEl) countEl.textContent = `${count} color${count !== 1 ? 's' : ''}`;
+  CA_SWATCHES_PANEL.style.display = 'flex';
+  CA_PALETTE_HDR.style.display = 'flex';
+}
+
+function caOnRender(resultDataUrl, hexColors, usageEntries) {
+  caCurrentUrl = resultDataUrl;
+  caSetPreviewImg(resultDataUrl);
+  caRenderPaletteStrip(hexColors);
+  caRenderPaletteCards(usageEntries);
+  CA_META_COLORS.textContent = `${usageEntries?.length ?? 0} colors`;
+  CA_CANVAS_META.classList.add('show');
+  const vLabel = caHistory.length === 0 ? 'original' : 'v' + caHistory.length;
+  caPushHistory(resultDataUrl, hexColors, usageEntries, vLabel);
+  // inline chat thumbnail
+  const thumbRow = document.createElement('div');
+  thumbRow.className = 'chat-thumb-row';
+  const thumb = document.createElement('div');
+  thumb.className = 'chat-thumb';
+  const swatchHtml = hexColors.slice(0, 6).map(h => `<i style="background:${h}"></i>`).join('');
+  thumb.innerHTML = `<div class="img-frame"><img src="${resultDataUrl}" alt="${vLabel}"></div>
+    <div class="chat-thumb-meta"><span class="v">${esc(vLabel)}</span><span class="mini">${swatchHtml}</span></div>`;
+  thumb.addEventListener('click', () => {
+    const idx = caHistory.findIndex(e => e.url === resultDataUrl);
+    if (idx >= 0) caNavigateHistory(idx);
+  });
+  thumbRow.appendChild(thumb);
+  CA_MESSAGES.appendChild(thumbRow);
+  CA_MESSAGES.parentElement.scrollTop = CA_MESSAGES.parentElement.scrollHeight;
+}
+
+// Connect callbacks once ColorAnythingCA is ready
+let caDefaultLoaded = false;
+
+async function caLoadDefault() {
+  if (caDefaultLoaded) return;
+  caDefaultLoaded = true;
+  caSetBusy(true, 'Loading sample…');
+  try {
+    const res = await fetch('/ca-default-image-url');
+    if (!res.ok) { caSetBusy(false); caShowNoImage(); return; }
+    const { url, filename } = await res.json();
+    const tryLoad = () => {
+      if (window.ColorAnythingCA) {
+        window.ColorAnythingCA.loadImage(url, filename);
+      } else {
+        setTimeout(tryLoad, 80);
+      }
+    };
+    tryLoad();
+  } catch (_) { caSetBusy(false); caShowNoImage(); }
+}
+
+function caShowNoImage() {
+  const t = document.getElementById('caPlaceholderTitle');
+  const s = document.getElementById('caPlaceholderSub');
+  if (t) t.textContent = 'No image loaded';
+  if (s) s.textContent = 'Click or drop to begin';
+  CA_HINT.textContent = 'Upload an image to begin';
+}
+
+function caConnectCallbacks() {
+  if (!window.ColorAnythingCA) { setTimeout(caConnectCallbacks, 80); return; }
+  window.ColorAnythingCA.onImageLoaded = caOnImageLoaded;
+  window.ColorAnythingCA.onRender      = caOnRender;
+  caLoadDefault();
+}
+// ════════════════════════════════
+// COLOR ANYTHING — CHAT
+// ════════════════════════════════
+let caBusy = false;
+let caActiveSrc = null;
+
+caConnectCallbacks();
+
+// Reasoning toggle
+CA_THINK_BTN.addEventListener('click', () => {
+  caThinkMode = !caThinkMode;
+  CA_THINK_BTN.classList.toggle('active', caThinkMode);
+  CA_THINK_BTN.title = caThinkMode ? 'Reasoning ON — slower but more accurate' : 'Reasoning OFF — faster responses';
+});
+
+function caAddMsg(role, text) {
+  if (role === 'system') {
+    const div = document.createElement('div');
+    div.className = 'row system';
+    div.innerHTML = `<div class="bub">${esc(text)}</div>`;
+    CA_MESSAGES.appendChild(div);
+  } else if (role === 'user') {
+    const div = document.createElement('div');
+    div.className = 'row user';
+    div.innerHTML = `<div class="bub">${esc(text)}</div>`;
+    CA_MESSAGES.appendChild(div);
+  } else {
+    const div = document.createElement('div');
+    div.className = 'row assistant';
+    div.innerHTML = `<div class="av">${SVG_MINIMARK}</div><div class="bub">${esc(text)}</div>`;
+    CA_MESSAGES.appendChild(div);
+  }
+  CA_MESSAGES.parentElement.scrollTop = CA_MESSAGES.parentElement.scrollHeight;
+}
+
+function caSetBusy(v, msg) {
+  caBusy = v;
+  const hasImage = !!window.ColorAnythingCA?.isImageLoaded();
+  CA_CHAT_INPUT.disabled = v || !hasImage;
+  CA_SEND_BTN.disabled   = v || !hasImage;
+  if (v && msg) {
+    CA_STATUS.innerHTML = `<div class="spinner"></div>${esc(msg)}`;
+    CA_STATUS.className = 'status-bar on';
+  } else {
+    CA_STATUS.innerHTML = '';
+    CA_STATUS.className = 'status-bar';
+  }
+}
+
+let caTypingRow = null;
+function caShowTyping() {
+  if (caTypingRow) return;
+  caTypingRow = document.createElement('div');
+  caTypingRow.className = 'typing-row';
+  caTypingRow.innerHTML = `<div class="av">${SVG_MINIMARK}</div><div class="typing-dots"><span></span><span></span><span></span></div>`;
+  CA_MESSAGES.appendChild(caTypingRow);
+  CA_MESSAGES.parentElement.scrollTop = CA_MESSAGES.parentElement.scrollHeight;
+}
+function caRemoveTyping() {
+  if (caTypingRow) { caTypingRow.remove(); caTypingRow = null; }
+}
+
+function caStream(prompt) {
+  if (!window.ColorAnythingCA) return;
+  const colors = window.ColorAnythingCA.getRepresentativeColors();
+  const model = CA_MODEL_SELECT.value;
+  const think = caThinkMode;
+  const url = `/stream-color-anything?prompt=${encodeURIComponent(prompt)}&colors=${encodeURIComponent(JSON.stringify(colors))}&model=${encodeURIComponent(model)}&think=${think}`;
+  const src = new EventSource(url);
+  caActiveSrc = src;
+  let firstEvent = true;
+  let thinkEl = null;
+
+  function onFirst() {
+    if (!firstEvent) return; firstEvent = false;
+    caRemoveTyping();
+    CA_STATUS.innerHTML = ''; CA_STATUS.className = 'status-bar';
+  }
+
+  src.addEventListener('thinking', e => {
+    onFirst();
+    const { chunk } = JSON.parse(e.data);
+    if (!chunk) return;
+    if (!thinkEl) {
+      const row = document.createElement('div'); row.className = 'think-row';
+      thinkEl = document.createElement('details'); thinkEl.className = 'think streaming'; thinkEl.open = false;
+      thinkEl.innerHTML = '<summary><span class="arr">▶</span> Reasoning…</summary><div class="think-body"></div>';
+      row.appendChild(thinkEl); CA_MESSAGES.appendChild(row);
+    }
+    thinkEl.querySelector('.think-body').textContent += chunk;
+    CA_MESSAGES.parentElement.scrollTop = CA_MESSAGES.parentElement.scrollHeight;
+  });
+
+  src.addEventListener('message', e => {
+    onFirst();
+    if (thinkEl) { thinkEl.classList.remove('streaming'); thinkEl.querySelector('summary').innerHTML = '<span class="arr">▶</span> Reasoning'; thinkEl = null; }
+    const { text } = JSON.parse(e.data);
+    if (text) caAddMsg('assistant', text);
+  });
+
+  src.addEventListener('color_update', e => {
+    onFirst();
+    const { colors: newColors } = JSON.parse(e.data);
+    if (Array.isArray(newColors) && window.ColorAnythingCA) {
+      window.ColorAnythingCA.setRepresentativeColors(newColors);
+      const row = document.createElement('div'); row.className = 'ca-color-update-row';
+      newColors.forEach(hex => {
+        const chip = document.createElement('div'); chip.className = 'ca-color-chip';
+        chip.style.background = hex; chip.title = hex; row.appendChild(chip);
+      });
+      CA_MESSAGES.appendChild(row);
+      CA_MESSAGES.parentElement.scrollTop = CA_MESSAGES.parentElement.scrollHeight;
+    }
+  });
+
+  src.addEventListener('done', () => {
+    caRemoveTyping(); src.close(); caActiveSrc = null;
+    caSetBusy(false); CA_HINT.textContent = ''; CA_CHAT_INPUT.focus();
+  });
+
+  src.addEventListener('error', e => {
+    caRemoveTyping();
+    try { caAddMsg('system', 'Error: ' + JSON.parse(e.data).error); } catch(_) {}
+    src.close(); caActiveSrc = null; caSetBusy(false);
+  });
+
+  src.onerror = () => { caRemoveTyping(); src.close(); caActiveSrc = null; caSetBusy(false); };
+}
+
+function caSendPrompt() {
+  if (caBusy) return;
+  const text = CA_CHAT_INPUT.value.trim();
+  if (!text || !window.ColorAnythingCA?.isImageLoaded()) return;
+  CA_CHAT_INPUT.value = ''; CA_CHAT_INPUT.style.height = '';
+  caAddMsg('user', text);
+  caShowTyping();
+  caSetBusy(true, 'Thinking…');
+  caStream(text);
+}
+
+CA_SEND_BTN.addEventListener('click', caSendPrompt);
+CA_CHAT_INPUT.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); caSendPrompt(); }
+});
+CA_CHAT_INPUT.addEventListener('input', () => {
+  CA_CHAT_INPUT.style.height = 'auto';
+  CA_CHAT_INPUT.style.height = Math.min(CA_CHAT_INPUT.scrollHeight, 160) + 'px';
+});
 </script>
 </body>
 </html>

@@ -17,38 +17,40 @@
     interpolationSteps: 5
   };
 
-  const originalCanvas = document.getElementById('kmeansOriginalCanvas');
-  const resultCanvas = document.getElementById('kmeansResultCanvas');
-  const originalMeta = document.getElementById('kmeansOriginalMeta');
-  const resultMeta = document.getElementById('kmeansResultMeta');
-  const representativeHint = document.getElementById('kmeansRepresentativeHint');
-  const swatches = document.getElementById('kmeansSwatches');
-  const paletteStrip = document.getElementById('kmeansPaletteStrip');
-  const lchEditor = document.getElementById('kmeansLchEditor');
-  const lchPreview = document.getElementById('kmeansLchPreview');
-  const lchPlane = document.getElementById('kmeansLchPlane');
-  const lchPlaneMarker = document.getElementById('kmeansLchPlaneMarker');
-  const lchPlaneLightnessRange = document.getElementById('kmeansLchPlaneLightnessRange');
-  const lchPlaneChromaRange = document.getElementById('kmeansLchPlaneChromaRange');
-  const lchLightnessValue = document.getElementById('kmeansLchLightnessValue');
-  const lchChromaValue = document.getElementById('kmeansLchChromaValue');
-  const lchHueSlider = document.getElementById('kmeansLchHueSlider');
-  const lchHueValue = document.getElementById('kmeansLchHueValue');
-  const lchLightness = document.getElementById('kmeansLchLightness');
-  const lchChroma = document.getElementById('kmeansLchChroma');
-  const lchClose = document.getElementById('kmeansLchClose');
-  const magnifier = document.getElementById('kmeansMagnifier');
-  const magnifierCanvas = document.getElementById('kmeansMagnifierCanvas');
-  const magnifierColor = document.getElementById('kmeansMagnifierColor');
-  const overlayToggle = document.getElementById('kmeansOverlayToggle');
-  const mergeToggle = document.getElementById('kmeansMergeToggle');
-  const mergeSlider = document.getElementById('kmeansMergeSlider');
-  const mergeValue = document.getElementById('kmeansMergeValue');
-  const interpolationSlider = document.getElementById('kmeansInterpolationSlider');
-  const interpolationValue = document.getElementById('kmeansInterpolationValue');
-  const saveButton = document.getElementById('kmeansSaveBtn');
-  const usageTitle = document.getElementById('kmeansUsageTitle');
-  const usageList = document.getElementById('kmeansUsageList');
+  const originalCanvas = document.getElementById('caOriginalCanvas');
+  const resultCanvas = document.getElementById('caResultCanvas');
+  // These legacy meta/status elements are null in the new sidebar layout — we use no-op proxies
+  const _noopEl = { textContent: '', innerHTML: '', disabled: false, style: {}, addEventListener: () => {} };
+  const originalMeta = document.getElementById('caOriginalMeta') || _noopEl;
+  const resultMeta = document.getElementById('caResultMeta') || _noopEl;
+  const representativeHint = document.getElementById('caRepHint');
+  const swatches = document.getElementById('caSwatches');
+  const paletteStrip = document.getElementById('caPaletteStrip') || _noopEl;
+  const lchEditor = document.getElementById('caLchEditor');
+  const lchPreview = document.getElementById('caLchPreview');
+  const lchPlane = document.getElementById('caLchPlane');
+  const lchPlaneMarker = document.getElementById('caLchPlaneMarker');
+  const lchPlaneLightnessRange = document.getElementById('caLchPlaneLightnessRange');
+  const lchPlaneChromaRange = document.getElementById('caLchPlaneChromaRange');
+  const lchLightnessValue = document.getElementById('caLchLightnessValue');
+  const lchChromaValue = document.getElementById('caLchChromaValue');
+  const lchHueSlider = document.getElementById('caLchHueSlider');
+  const lchHueValue = document.getElementById('caLchHueValue');
+  const lchLightness = document.getElementById('caLchLightness');
+  const lchChroma = document.getElementById('caLchChroma');
+  const lchClose = document.getElementById('caLchClose');
+  const magnifier = document.getElementById('caMagnifier');
+  const magnifierCanvas = document.getElementById('caMagnifierCanvas');
+  const magnifierColor = document.getElementById('caMagnifierColor');
+  const overlayToggle = document.getElementById('caOverlayToggle');
+  const mergeToggle = document.getElementById('caMergeToggle');
+  const mergeSlider = document.getElementById('caMergeSlider');
+  const mergeValue = document.getElementById('caMergeValue');
+  const interpolationSlider = document.getElementById('caInterpolationSlider');
+  const interpolationValue = document.getElementById('caInterpolationValue');
+  const saveButton = document.getElementById('caSaveBtn') || _noopEl;
+  const usageTitle = document.getElementById('caUsageTitle') || _noopEl;
+  const usageList = document.getElementById('caUsageList') || _noopEl;
 
   if (!originalCanvas || !resultCanvas) {
     return;
@@ -615,14 +617,15 @@
     representativeHint.textContent = representativeColors.length > 0
       ? 'click a swatch to adjust LCH in the picker, or click the original image to add another color'
       : 'click the original image to add representative colors';
+    if (representativeHint) representativeHint.style.display = representativeColors.length === 0 ? '' : 'none';
 
     palette.forEach((color, index) => {
       const isFixed = index === 0 || index === palette.length - 1;
       const representativeIndex = index - 1;
       const wrap = document.createElement('div');
-      wrap.className = 'swatch-wrap';
+      wrap.className = 'ca-swatch-wrap';
       const swatch = document.createElement('div');
-      swatch.className = `swatch${isFixed ? ' fixed' : ''}`;
+      swatch.className = `ca-swatch${isFixed ? ' fixed' : ''}`;
       swatch.style.background = `rgb(${color[0]},${color[1]},${color[2]})`;
       swatch.title = isFixed
         ? (index === 0 ? 'Black (fixed)' : 'White (fixed)')
@@ -637,7 +640,7 @@
         });
 
         const removeButton = document.createElement('button');
-        removeButton.className = 'swatch-remove';
+        removeButton.className = 'ca-swatch-remove';
         removeButton.title = 'Remove';
         removeButton.textContent = '×';
         removeButton.addEventListener('click', event => {
@@ -673,15 +676,14 @@
     return entries.map(entry => {
       const swatchStyle = `background:rgb(${entry.color[0]},${entry.color[1]},${entry.color[2]})`;
       return `
-        <article class="usage-swatch-wrap">
-          <div class="usage-kind is-${entry.kind}">${entry.kind}</div>
-          <div class="usage-swatch" style="${swatchStyle}"></div>
-          <div class="usage-meta">
-            <div class="usage-percentage">${entry.percent.toFixed(1)}%</div>
-            <div class="usage-count">${entry.count.toLocaleString()} px</div>
-            <div class="usage-hex">${entry.hex}</div>
+        <div class="ca-usage-card">
+          <div class="ca-usage-swatch" style="${swatchStyle}"></div>
+          <div class="ca-usage-meta">
+            <span class="ca-usage-kind is-${entry.kind}">${entry.kind}</span>
+            <div class="ca-usage-pct">${entry.percent.toFixed(1)}%</div>
+            <div class="ca-usage-hex">${entry.hex}</div>
           </div>
-        </article>
+        </div>
       `;
     }).join('');
   }
@@ -752,6 +754,12 @@
       resultCanvas.width = renderResult.width;
       resultCanvas.height = renderResult.height;
       resultCtx.putImageData(new ImageData(renderResult.imageData, renderResult.width, renderResult.height), 0, 0);
+      if (window.ColorAnythingCA?.onRender) {
+        const hexColors = [FIXED_COLORS[0], ...representativeColors, FIXED_COLORS[1]]
+          .map(c => rgbToHex(c));
+        const resultUrl = resultCanvas.toDataURL('image/png');
+        window.ColorAnythingCA.onRender(resultUrl, hexColors, renderResult.usageEntries);
+      }
       const { stats } = renderResult;
       renderPaletteStrip(renderResult.palette);
       restoreOriginalMetaLabel();
@@ -794,6 +802,12 @@
       resultCanvas.width = renderResult.width;
       resultCanvas.height = renderResult.height;
       resultCtx.putImageData(new ImageData(renderResult.imageData, renderResult.width, renderResult.height), 0, 0);
+      if (window.ColorAnythingCA?.onRender) {
+        const hexColors = [FIXED_COLORS[0], ...representativeColors, FIXED_COLORS[1]]
+          .map(c => rgbToHex(c));
+        const resultUrl = resultCanvas.toDataURL('image/png');
+        window.ColorAnythingCA.onRender(resultUrl, hexColors, renderResult.usageEntries);
+      }
       const { stats } = renderResult;
       renderPaletteStrip(renderResult.palette);
       resultMeta.textContent = `${stats.usedPaletteEntries} mapped entries · ${stats.representativeEntryCount} representative${stats.interpolatedEntryCount > 0 ? `, ${stats.interpolatedEntryCount} interpolated` : ''}${getRenderAdjustmentSummary()}`;
@@ -1025,6 +1039,10 @@
           restoreOriginalMetaLabel();
 
           await detectAndRender(label, true);
+          if (window.ColorAnythingCA?.onImageLoaded) {
+            const origUrl = originalCanvas.toDataURL('image/png');
+            window.ColorAnythingCA.onImageLoaded(origUrl, label, imageRegion.width, imageRegion.height);
+          }
           resolve(true);
         } catch (error) {
           currentImageData = null;
@@ -1199,19 +1217,24 @@
 
   saveButton.addEventListener('click', saveResult);
 
-  window.addEventListener(IMAGE_EVENT, event => {
-    const detail = event.detail || {};
-    if (detail.src) {
-      loadSharedImage(detail.src, detail.label || detail.src);
-    }
-  });
-
   loadSettings();
   renderRepresentativeSwatches();
   renderUsagePreview(null);
   resultMeta.textContent = 'result pending';
 
-  if (shared.currentSelection && shared.currentSelection.src) {
-    loadSharedImage(shared.currentSelection.src, shared.currentSelection.label || shared.currentSelection.src);
-  }
+  // Public API + callbacks for the shell UI
+  window.ColorAnythingCA = {
+    onImageLoaded: null,  // (originalDataUrl, filename, w, h) => void
+    onRender: null,       // (resultDataUrl, hexColors, entryCount) => void
+
+    loadImage: loadSharedImage,
+    getRepresentativeColors: () => representativeColors.map(c => rgbToHex(c)),
+    setRepresentativeColors(hexList) {
+      representativeColors = sanitizeRepresentativeColors(hexList.map(hexToRgb));
+      lastQuantization = buildQuantizationModel();
+      renderRepresentativeSwatches();
+      applyRepresentativeEditPreview();
+    },
+    isImageLoaded: () => !!currentImageData,
+  };
 })();
